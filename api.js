@@ -33,7 +33,8 @@ const Api = {
 
   /* ---------- Chamada à API ----------
      Busca dados de uma fazenda. Lança Error com mensagem amigável
-     se algo der errado. */
+     se algo der errado. O `detail` do erro carrega o body da resposta
+     pra ajudar a debugar problemas de auth. */
   async fetchFarm(farmId) {
     const key = this.getKey();
     if (!key)    throw new Error("Nenhuma chave de API configurada. Vá em ⚙️ Config.");
@@ -50,11 +51,24 @@ const Api = {
       throw new Error("Falha de rede. O carteiro (Worker) pode estar fora do ar.");
     }
 
-    if (res.status === 401) throw new Error("Chave de API inválida ou expirada.");
-    if (res.status === 403) throw new Error("Acesso negado (caminho não autorizado pelo proxy).");
-    if (res.status === 404) throw new Error("Fazenda não encontrada.");
-    if (!res.ok)            throw new Error(`Erro da API: ${res.status}`);
+    // Captura o body em todos os casos pra ajudar a debugar
+    const bodyText = await res.text();
 
-    return res.json();
+    if (!res.ok) {
+      const messages = {
+        401: "Chave de API inválida ou rejeitada (veja Debug pra o motivo).",
+        403: "Acesso negado pelo proxy (caminho não autorizado).",
+        404: "Fazenda não encontrada."
+      };
+      const err = new Error(messages[res.status] || `Erro da API: ${res.status}`);
+      err.detail = `HTTP ${res.status}\n\nResposta crua da API:\n${bodyText}`;
+      throw err;
+    }
+
+    try {
+      return JSON.parse(bodyText);
+    } catch (e) {
+      throw new Error("Resposta da API não é JSON válido. Veja Debug.");
+    }
   }
 };

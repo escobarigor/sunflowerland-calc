@@ -514,7 +514,8 @@ function renderSettingsTab() {
       debugBox.textContent = JSON.stringify(data, null, 2);
     } catch (e) {
       resultBox.innerHTML = `<p class="note warn">❌ ${e.message}</p>`;
-      debugBox.textContent = `Erro: ${e.message}`;
+      // mostra o detalhe (body da resposta) se houver, senão só a mensagem
+      debugBox.textContent = e.detail || e.message;
     }
   });
 
