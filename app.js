@@ -392,7 +392,7 @@ function renderCookingTab() {
 }
 
 /* =========================================================
-   ABA: CONFIG  (chave de API + debug)
+   ABA: CONFIG  (chave de API + ID da fazenda + teste de conexão)
    ========================================================= */
 function renderSettingsTab() {
   const panel = document.getElementById("tab-settings");
@@ -402,58 +402,122 @@ function renderSettingsTab() {
       <h2>⚙️ Chave de API</h2>
       <p class="note warn">
         <strong>Segurança:</strong> sua chave de API fica salva
-        <em>apenas neste navegador</em> (localStorage) e só é enviada para a
-        API oficial do Sunflower Land. Nunca compartilhe ela em chats, prints
-        ou fóruns. Se vazar, gere uma nova no jogo em
-        <code>Settings → Developer Options → API Key</code>.
+        <em>apenas neste navegador</em> e só é enviada para a API oficial do
+        Sunflower Land (através do nosso proxy). Nunca compartilhe ela em chats
+        ou prints. Se vazar, gere uma nova em
+        <code>Settings → Developer Options → API Key</code> no jogo.
       </p>
 
       <label for="api-key-input">Cole sua chave de API</label>
       <input type="text" id="api-key-input" placeholder="sfl...." autocomplete="off" />
 
       <div class="field-row" style="margin-top:14px">
-        <div style="flex:0"><button class="btn" id="api-save">Salvar</button></div>
+        <div style="flex:0"><button class="btn" id="api-save">Salvar chave</button></div>
         <div style="flex:0"><button class="btn btn-danger" id="api-clear">Apagar</button></div>
         <div id="api-status" style="align-self:center; font-size:14px;"></div>
       </div>
     </div>
 
     <div class="card">
-      <h3>🐛 Debug</h3>
+      <h2>🏝️ ID da Fazenda</h2>
       <p class="note">
-        Espaço para inspecionar a resposta crua da API quando a Onda 2 entrar.
-        Por enquanto serve para testar se a chave foi salva.
+        ID numérico da sua fazenda. Achável nas configurações do jogo,
+        ou inspecionando a URL/network quando você joga.
+      </p>
+
+      <label for="farm-id-input">ID da sua fazenda</label>
+      <input type="text" id="farm-id-input" placeholder="ex: 12345" autocomplete="off" />
+
+      <div class="field-row" style="margin-top:14px">
+        <div style="flex:0"><button class="btn" id="farm-save">Salvar ID</button></div>
+        <div style="flex:0"><button class="btn btn-danger" id="farm-clear">Apagar</button></div>
+        <div id="farm-status" style="align-self:center; font-size:14px;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🔌 Testar conexão</h2>
+      <p class="note">
+        Faz uma chamada de verdade na API (via Cloudflare Worker) usando sua chave
+        e ID salvos. Útil pra confirmar que tudo está conectado antes das abas
+        Resumo e Inventário serem implementadas.
+      </p>
+      <button class="btn" id="test-conn">Testar agora</button>
+      <div id="test-result" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h3>🐛 Debug — resposta crua da API</h3>
+      <p class="note">
+        Mostra o JSON cru da última requisição. <strong>Não cole isso em
+        público</strong> sem revisar — pode ter dados sensíveis (endereço de
+        carteira, etc).
       </p>
       <pre class="debug" id="debug-box">// nada por aqui ainda</pre>
     </div>
   `;
 
-  const input  = panel.querySelector("#api-key-input");
-  const status = panel.querySelector("#api-status");
+  const keyInput   = panel.querySelector("#api-key-input");
+  const keyStatus  = panel.querySelector("#api-status");
+  const farmInput  = panel.querySelector("#farm-id-input");
+  const farmStatus = panel.querySelector("#farm-status");
+  const debugBox   = panel.querySelector("#debug-box");
+  const resultBox  = panel.querySelector("#test-result");
 
-  function refreshStatus() {
+  function refreshKey() {
     if (Api.hasKey()) {
-      status.innerHTML = `✅ Chave salva: <code>${Api.maskedKey()}</code>`;
-      input.placeholder = "Chave já salva — cole de novo para substituir";
+      keyStatus.innerHTML = `✅ Chave salva: <code>${Api.maskedKey()}</code>`;
     } else {
-      status.textContent = "Nenhuma chave salva.";
-      input.placeholder = "sfl....";
+      keyStatus.textContent = "Nenhuma chave salva.";
+    }
+  }
+  function refreshFarm() {
+    if (Api.hasFarmId()) {
+      farmStatus.innerHTML = `✅ ID salvo: <code>${Api.getFarmId()}</code>`;
+    } else {
+      farmStatus.textContent = "Nenhum ID salvo.";
     }
   }
 
+  // ações: chave
   panel.querySelector("#api-save").addEventListener("click", () => {
-    const value = input.value.trim();
-    if (!value) { status.textContent = "⚠️ Cole uma chave antes de salvar."; return; }
-    Api.setKey(value);
-    input.value = "";
-    refreshStatus();
+    const v = keyInput.value.trim();
+    if (!v) { keyStatus.textContent = "⚠️ Cole uma chave antes de salvar."; return; }
+    Api.setKey(v); keyInput.value = ""; refreshKey();
   });
-
   panel.querySelector("#api-clear").addEventListener("click", () => {
-    Api.clearKey();
-    input.value = "";
-    refreshStatus();
+    Api.clearKey(); refreshKey();
   });
 
-  refreshStatus();
+  // ações: farm id
+  panel.querySelector("#farm-save").addEventListener("click", () => {
+    const v = farmInput.value.trim();
+    if (!v) { farmStatus.textContent = "⚠️ Digite um ID antes de salvar."; return; }
+    Api.setFarmId(v); farmInput.value = ""; refreshFarm();
+  });
+  panel.querySelector("#farm-clear").addEventListener("click", () => {
+    Api.clearFarmId(); refreshFarm();
+  });
+
+  // ação: teste de conexão
+  panel.querySelector("#test-conn").addEventListener("click", async () => {
+    resultBox.innerHTML = `<p class="note">⏳ Testando...</p>`;
+    debugBox.textContent = "// requisitando...";
+    try {
+      const data = await Api.fetchFarm(Api.getFarmId());
+      resultBox.innerHTML = `
+        <p class="note" style="border-left-color: var(--accent-2);">
+          ✅ Conexão OK! A API respondeu. Veja o JSON cru abaixo —
+          quando quiser, copia os campos principais (sem dados sensíveis)
+          e me manda no chat pra eu construir as abas Resumo e Inventário.
+        </p>`;
+      debugBox.textContent = JSON.stringify(data, null, 2);
+    } catch (e) {
+      resultBox.innerHTML = `<p class="note warn">❌ ${e.message}</p>`;
+      debugBox.textContent = `Erro: ${e.message}`;
+    }
+  });
+
+  refreshKey();
+  refreshFarm();
 }
