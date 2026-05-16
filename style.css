@@ -283,6 +283,94 @@ select:focus, input:focus { outline: 2px solid var(--accent); }
   padding: 24px;
 }
 
+/* ---------- Estatísticas (Resumo) ---------- */
+.muted { color: var(--ink-soft); font-weight: 400; font-size: 14px; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 12px 0 8px;
+}
+.stat-grid-small {
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+}
+.stat {
+  background: var(--card-2);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.stat-value {
+  font-family: 'Silkscreen', monospace;
+  font-size: 16px;
+  color: var(--ink);
+}
+.stat-sub {
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+}
+
+.progress-bar {
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0 4px;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.3s ease;
+}
+
+/* ---------- Chips (skills, achievements) ---------- */
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.chip {
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.chip-gold {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  border-color: var(--accent);
+}
+
+/* ---------- Inventário ---------- */
+.inv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 8px 0 18px;
+}
+.inv-chip {
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.inv-name { font-size: 13px; color: var(--ink); flex: 1; }
+.inv-count {
+  font-family: 'Silkscreen', monospace;
+  font-size: 12px;
+  color: var(--accent-2d);
+}
+
 /* ---------- Tabela de dados ---------- */
 .table-wrap { overflow-x: auto; margin-top: 14px; }
 .data-table {

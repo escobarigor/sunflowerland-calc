@@ -142,6 +142,30 @@ const Calc = {
       .filter(r => !building || r.building === building)
       .map(r => ({ ...r, xpPerHour: this.recipeXpPerHour(r) }))
       .sort((a, b) => b.xpPerHour - a.xpPerHour);
+  },
+
+  /* ---------- BUMPKIN ----------
+     Converte XP no nível atual + progresso pro próximo. */
+  bumpkinLevel(xp) {
+    const tbl = GAME_DATA.bumpkinLevels;
+    let lvl = 1;
+    for (let i = 0; i < tbl.length; i++) {
+      if (xp >= tbl[i]) lvl = i + 1;
+      else break;
+    }
+    const curThreshold = tbl[lvl - 1] ?? 0;
+    const nextThreshold = tbl[lvl] ?? curThreshold;
+    const progressXp = xp - curThreshold;
+    const neededXp = nextThreshold - curThreshold;
+    const pct = neededXp > 0 ? Math.floor((progressXp / neededXp) * 100) : 100;
+    return {
+      level: lvl,
+      currentXp: xp,
+      currentLevelXp: curThreshold,
+      nextLevelXp: nextThreshold,
+      progressXp, neededXp,
+      progressPercent: pct
+    };
   }
 };
 

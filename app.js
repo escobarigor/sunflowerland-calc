@@ -11,6 +11,8 @@ document.addEventListener("DOMContentLoaded", () => {
   renderCropsTab();
   renderResourcesTab();
   renderCookingTab();
+  renderSummaryTab();
+  renderInventoryTab();
   renderSettingsTab();
 });
 
@@ -388,6 +390,244 @@ function renderCookingTab() {
   }
 
   buildingSelect.addEventListener("change", render);
+  render();
+}
+
+/* =========================================================
+   ABA: RESUMO  (puxa fazenda da API, mostra estatísticas)
+   ========================================================= */
+function renderSummaryTab() {
+  const panel = document.getElementById("tab-summary");
+
+  function render() {
+    const cached = Api.getCachedFarm();
+    if (!cached) {
+      panel.innerHTML = `
+        <div class="card">
+          <h2>📊 Resumo da Fazenda</h2>
+          <p class="note">
+            Clica em "Carregar fazenda" pra puxar seus dados via API.
+            Antes, garante que a chave e o ID estejam salvos em <strong>⚙️ Config</strong>.
+          </p>
+          <button class="btn" id="summary-load">Carregar fazenda</button>
+          <div id="summary-status" style="margin-top:14px"></div>
+        </div>
+      `;
+      panel.querySelector("#summary-load").addEventListener("click", loadFarm);
+      return;
+    }
+    renderWithData(cached.data, cached.fetchedAt);
+  }
+
+  async function loadFarm() {
+    const status = panel.querySelector("#summary-status");
+    if (status) status.innerHTML = `<p class="note">⏳ Buscando dados...</p>`;
+    try {
+      await Api.loadFarm();
+      render();
+    } catch (e) {
+      if (status) {
+        status.innerHTML = `<p class="note warn">❌ ${e.message}</p>`;
+      }
+    }
+  }
+
+  function renderWithData(farmData, fetchedAt) {
+    const farm = farmData.farm;
+    const bumpkin = farm.bumpkin || {};
+    const inv = farm.inventory || {};
+    const item = (n) => parseFloat(inv[n] || "0");
+    const lvl = Calc.bumpkinLevel(bumpkin.experience || 0);
+
+    const vipActive = farm.vip?.expiresAt > Date.now();
+    const islandName = (farm.island?.type || "?").replace(/^./, c => c.toUpperCase());
+
+    const skills = Object.keys(bumpkin.skills || {});
+    const achievements = Object.keys(bumpkin.achievements || {});
+
+    panel.innerHTML = `
+      <div class="card">
+        <h2>📊 ${farm.username ? `Fazenda de ${farm.username}` : `Fazenda`} <span class="muted">#${farmData.id}</span></h2>
+        <p class="note">Atualizado às ${new Date(fetchedAt).toLocaleTimeString('pt-BR')}</p>
+
+        <div class="stat-grid">
+          <div class="stat">
+            <div class="stat-label">Bumpkin</div>
+            <div class="stat-value">Lv ${lvl.level}</div>
+            <div class="stat-sub">${Math.floor(lvl.currentXp).toLocaleString('pt-BR')} XP</div>
+            <div class="progress-bar"><div class="progress-fill" style="width:${lvl.progressPercent}%"></div></div>
+            <div class="stat-sub">${lvl.progressPercent}% pro nível ${lvl.level + 1}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Ilha</div>
+            <div class="stat-value">${islandName}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">🪙 Coins</div>
+            <div class="stat-value">${farm.coins?.toFixed(2) || "0"}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">🌸 FLOWER</div>
+            <div class="stat-value">${parseFloat(farm.balance || "0").toFixed(2)}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">💎 Gems</div>
+            <div class="stat-value">${item("Gem")}</div>
+          </div>
+          ${vipActive ? `
+            <div class="stat">
+              <div class="stat-label">⭐ VIP</div>
+              <div class="stat-value">Ativo</div>
+              <div class="stat-sub">até ${new Date(farm.vip.expiresAt).toLocaleDateString('pt-BR')}</div>
+            </div>
+          ` : ''}
+        </div>
+
+        <h3>Nós no mapa</h3>
+        <div class="stat-grid stat-grid-small">
+          <div class="stat"><div class="stat-value">🌾 ${item("Crop Plot")}</div><div class="stat-sub">plantios</div></div>
+          <div class="stat"><div class="stat-value">🌳 ${item("Tree")}</div><div class="stat-sub">árvores</div></div>
+          <div class="stat"><div class="stat-value">🪨 ${item("Stone Rock")}</div><div class="stat-sub">pedras</div></div>
+          <div class="stat"><div class="stat-value">⛓️ ${item("Iron Rock")}</div><div class="stat-sub">ferro</div></div>
+          <div class="stat"><div class="stat-value">🟡 ${item("Gold Rock")}</div><div class="stat-sub">ouro</div></div>
+          <div class="stat"><div class="stat-value">🔴 ${item("Crimstone Rock")}</div><div class="stat-sub">crimstone</div></div>
+        </div>
+
+        ${skills.length ? `
+          <h3>Skills (${skills.length})</h3>
+          <div class="chip-row">${skills.map(s => `<span class="chip">${s}</span>`).join('')}</div>
+        ` : ''}
+
+        ${achievements.length ? `
+          <h3>Conquistas (${achievements.length})</h3>
+          <div class="chip-row">${achievements.map(a => `<span class="chip chip-gold">${a}</span>`).join('')}</div>
+        ` : ''}
+
+        <div style="margin-top:18px">
+          <button class="btn btn-ghost" id="summary-reload">🔄 Atualizar</button>
+        </div>
+        <div id="summary-status" style="margin-top:14px"></div>
+      </div>
+    `;
+    panel.querySelector("#summary-reload").addEventListener("click", loadFarm);
+  }
+
+  render();
+}
+
+/* =========================================================
+   ABA: INVENTÁRIO  (lista categorizada do que a fazenda tem)
+   ========================================================= */
+function renderInventoryTab() {
+  const panel = document.getElementById("tab-inventory");
+
+  // Conjuntos de categorização (rule-based)
+  const CROP_NAMES   = new Set(GAME_DATA.crops.map(c => c.name));
+  const RESOURCES    = new Set(["Wood","Stone","Iron","Gold","Crimstone","Sunstone","Oil","Gem","Salt Rock"]);
+  const TOOLS        = new Set(["Axe","Pickaxe","Stone Pickaxe","Iron Pickaxe","Gold Pickaxe","Rod","Oil Drill","Sand Shovel","Sand Drill","Shovel","Rusty Shovel","Salt Rake","Crab Pot","Mariner Pot"]);
+  const BUILDINGS    = new Set(["Town Center","Market","Workbench","Fire Pit","Water Well","Compost Bin","Kitchen","Bakery","Deli","Smoothie Shack","Hen House","Barn","Greenhouse","Crafting Box","Tent","House","Manor","Mansion","Crop Machine","Toolshed","Warehouse"]);
+  const COLLECT      = new Set(["Basic Scarecrow","Scary Mike","Laurie the Chuckle Crow","Basic Bear","Time Warp Totem","Treasure Map","Magic Mushroom"]);
+
+  function categorize(name) {
+    if (name.endsWith(" Seed") || name.endsWith(" Plant")) return "🌱 Sementes";
+    if (CROP_NAMES.has(name)) return "🌾 Plantações colhidas";
+    if (RESOURCES.has(name)) return "🪨 Recursos";
+    if (TOOLS.has(name)) return "🔨 Ferramentas";
+    if (BUILDINGS.has(name)) return "🏗️ Construções";
+    if (name.endsWith(" Land") || name === "Crop Plot" || name.endsWith(" Rock") || name === "Tree") return "🏝️ Terreno e nós";
+    if (COLLECT.has(name)) return "🎁 Colecionáveis";
+    if (["Wild Mushroom","Earthworm","Dung","Weed","Sprout Mix","Love Charm"].includes(name)) return "🪴 Diversos";
+    return "📦 Outros";
+  }
+
+  function render() {
+    const cached = Api.getCachedFarm();
+    if (!cached) {
+      panel.innerHTML = `
+        <div class="card">
+          <h2>📦 Inventário</h2>
+          <p class="note">
+            Clica em "Carregar inventário" pra puxar via API.
+            Antes, garante que a chave e o ID estejam salvos em <strong>⚙️ Config</strong>.
+          </p>
+          <button class="btn" id="inv-load">Carregar inventário</button>
+          <div id="inv-status" style="margin-top:14px"></div>
+        </div>
+      `;
+      panel.querySelector("#inv-load").addEventListener("click", loadFarm);
+      return;
+    }
+    renderWithData(cached.data, cached.fetchedAt);
+  }
+
+  async function loadFarm() {
+    const status = panel.querySelector("#inv-status");
+    if (status) status.innerHTML = `<p class="note">⏳ Buscando...</p>`;
+    try {
+      await Api.loadFarm();
+      render();
+    } catch (e) {
+      if (status) status.innerHTML = `<p class="note warn">❌ ${e.message}</p>`;
+    }
+  }
+
+  function renderWithData(farmData, fetchedAt) {
+    const inv = farmData.farm.inventory || {};
+    const groups = {};
+    for (const [name, count] of Object.entries(inv)) {
+      const c = parseFloat(count);
+      if (c === 0) continue;
+      const cat = categorize(name);
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push({ name, count: c });
+    }
+
+    // ordem amigável das seções
+    const order = [
+      "🏝️ Terreno e nós",
+      "🌱 Sementes",
+      "🌾 Plantações colhidas",
+      "🪨 Recursos",
+      "🔨 Ferramentas",
+      "🏗️ Construções",
+      "🎁 Colecionáveis",
+      "🪴 Diversos",
+      "📦 Outros"
+    ];
+    const sortedCats = order.filter(c => groups[c]);
+    const totalItems = Object.values(groups).reduce((a, g) => a + g.length, 0);
+
+    const sectionsHtml = sortedCats.map(cat => {
+      const items = groups[cat].sort((a, b) => a.name.localeCompare(b.name));
+      const chips = items.map(i => `
+        <div class="inv-chip">
+          <div class="inv-name">${i.name}</div>
+          <div class="inv-count">${Number.isInteger(i.count) ? i.count : i.count.toFixed(2)}</div>
+        </div>
+      `).join('');
+      return `
+        <h3>${cat} <span class="muted">(${items.length})</span></h3>
+        <div class="inv-grid">${chips}</div>
+      `;
+    }).join('');
+
+    panel.innerHTML = `
+      <div class="card">
+        <h2>📦 Inventário</h2>
+        <p class="note">
+          ${totalItems} itens diferentes &middot; atualizado às
+          ${new Date(fetchedAt).toLocaleTimeString('pt-BR')}.
+        </p>
+        ${sectionsHtml}
+        <div style="margin-top:18px">
+          <button class="btn btn-ghost" id="inv-reload">🔄 Atualizar</button>
+        </div>
+        <div id="inv-status" style="margin-top:14px"></div>
+      </div>
+    `;
+    panel.querySelector("#inv-reload").addEventListener("click", loadFarm);
+  }
+
   render();
 }
 

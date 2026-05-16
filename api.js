@@ -12,6 +12,18 @@ const FARM_ID_KEY = "sfl_eco_farm_id";
 
 const Api = {
 
+  /* Cache da última fazenda carregada — compartilhado entre as abas */
+  _farmCache: null,
+
+  getCachedFarm() { return this._farmCache; },
+
+  /* Carrega a fazenda e guarda em cache */
+  async loadFarm() {
+    const data = await this.fetchFarm(this.getFarmId());
+    this._farmCache = { data, fetchedAt: Date.now() };
+    return data;
+  },
+
   /* ---------- Chave de API (fica só no navegador) ---------- */
   getKey()   { return localStorage.getItem(STORAGE_KEY) || ""; },
   setKey(k)  { localStorage.setItem(STORAGE_KEY, (k || "").trim()); },
