@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="light">
+<html lang="pt" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -24,23 +24,28 @@
       </div>
     </div>
     <div class="header-actions">
-      <!-- Widget de tradução automática (Google Translate) -->
-      <div id="google_translate_element" class="translate-box notranslate"></div>
-      <button id="theme-toggle" class="theme-toggle" title="Alternar tema" aria-label="Alternar tema">
+      <!-- Seletor de idioma (tradução feita no código, ver i18n.js) -->
+      <div class="lang-switch" id="lang-switch">
+        <button data-lang="pt" type="button">PT</button>
+        <button data-lang="en" type="button">EN</button>
+        <button data-lang="es" type="button">ES</button>
+      </div>
+      <button id="theme-toggle" class="theme-toggle" title="Tema" aria-label="Alternar tema">
         <span class="theme-icon">🌙</span>
       </button>
     </div>
   </header>
 
   <!-- ===================== NAVEGAÇÃO (ABAS) ===================== -->
+  <!-- O texto das abas é preenchido por app.js → applyStaticText() -->
   <nav class="tab-bar" id="tab-bar">
-    <button class="tab-btn active" data-tab="expansion">🏝️ Expansão</button>
-    <button class="tab-btn" data-tab="crops">🌾 Plantações</button>
-    <button class="tab-btn" data-tab="resources">🪵 Recursos</button>
-    <button class="tab-btn" data-tab="cooking">🍳 Cozinha</button>
-    <button class="tab-btn" data-tab="summary">📊 Resumo <span class="badge">API</span></button>
-    <button class="tab-btn" data-tab="inventory">📦 Inventário <span class="badge">API</span></button>
-    <button class="tab-btn" data-tab="settings">⚙️ Config</button>
+    <button class="tab-btn active" data-tab="expansion">Expansão</button>
+    <button class="tab-btn" data-tab="crops">Plantações</button>
+    <button class="tab-btn" data-tab="resources">Recursos</button>
+    <button class="tab-btn" data-tab="cooking">Cozinha</button>
+    <button class="tab-btn" data-tab="summary">Resumo</button>
+    <button class="tab-btn" data-tab="inventory">Inventário</button>
+    <button class="tab-btn" data-tab="settings">Config</button>
   </nav>
 
   <main class="content">
@@ -55,27 +60,15 @@
 
   <footer class="app-footer">
     <p>Projeto comunitário não-oficial. Não afiliado ao Sunflower Land.</p>
-    <p class="notranslate">Dados do jogo: github.com/sunflower-land/sunflower-land</p>
+    <p>Dados do jogo: github.com/sunflower-land/sunflower-land</p>
   </footer>
 
-  <!-- Ordem importa: data → api → calc → tabs → app -->
+  <!-- Ordem importa: i18n → data → api → calc → tabs → app -->
+  <script src="i18n.js"></script>
   <script src="data.js"></script>
   <script src="api.js"></script>
   <script src="calc.js"></script>
   <script src="tabs.js"></script>
   <script src="app.js"></script>
-
-  <!-- Tradução automática via Google Translate -->
-  <script type="text/javascript">
-    function googleTranslateElementInit() {
-      new google.translate.TranslateElement({
-        pageLanguage: "pt",
-        includedLanguages: "en,es,fr,de,it,ru,zh-CN,ja,ko,ar,hi",
-        autoDisplay: false
-      }, "google_translate_element");
-    }
-  </script>
-  <script type="text/javascript"
-    src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 </body>
 </html>

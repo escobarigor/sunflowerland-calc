@@ -116,34 +116,31 @@ code {
 }
 .theme-toggle:active { transform: translateY(3px); box-shadow: none; }
 
-/* ---------- Widget de tradução (Google Translate) ---------- */
-/* O Google injeta uma barra no topo da página — escondemos ela. */
-.goog-te-banner-frame,
-.goog-te-gadget-icon { display: none !important; }
-body { top: 0 !important; position: static !important; }
-/* tira o destaque amarelo que o Google põe no texto traduzido */
-.goog-text-highlight {
-  background: none !important;
-  box-shadow: none !important;
-}
-
-.translate-box {
-  font-size: 0; /* esconde o texto "Powered by" residual */
-}
-.translate-box select.goog-te-combo {
-  font-family: 'Fredoka', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--card);
+/* ---------- Seletor de idioma ---------- */
+.lang-switch {
+  display: flex;
   border: 2px solid var(--line);
   border-radius: 12px;
-  padding: 11px 10px;
-  cursor: pointer;
+  overflow: hidden;
   box-shadow: 0 3px 0 var(--shadow);
-  max-width: 150px;
 }
-.translate-box select.goog-te-combo:hover { border-color: var(--accent); }
+.lang-switch button {
+  font-family: 'Silkscreen', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--card-2);
+  border: none;
+  border-right: 2px solid var(--line);
+  padding: 12px 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.lang-switch button:last-child { border-right: none; }
+.lang-switch button:hover { color: var(--ink); }
+.lang-switch button.active {
+  background: var(--accent);
+  color: var(--ink);
+}
 
 /* ---------- Barra de abas ---------- */
 .tab-bar {

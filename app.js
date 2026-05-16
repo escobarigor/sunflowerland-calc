@@ -1,12 +1,20 @@
 /* =========================================================
    app.js — PONTO DE ENTRADA.
-   Liga tudo e desenha o conteúdo das abas que já têm lógica.
-   (As abas placeholder são HTML estático no index.html.)
+   Liga tudo, controla idioma/tema e desenha as abas.
+   Todos os textos de interface passam por t() (ver i18n.js).
    ========================================================= */
 
 document.addEventListener("DOMContentLoaded", () => {
+  Lang.init();
   Tabs.init();
   initTheme();
+  initLang();
+  renderAll();
+});
+
+/* Redesenha tudo — usado na carga e ao trocar de idioma. */
+function renderAll() {
+  applyStaticText();
   renderExpansionTab();
   renderCropsTab();
   renderResourcesTab();
@@ -14,15 +22,46 @@ document.addEventListener("DOMContentLoaded", () => {
   renderSummaryTab();
   renderInventoryTab();
   renderSettingsTab();
-});
+}
 
 /* ---------------------------------------------------------
-   TEMA claro/escuro — guarda a escolha no localStorage
+   IDIOMA — seletor PT / EN / ES no cabeçalho
+   --------------------------------------------------------- */
+function initLang() {
+  const buttons = document.querySelectorAll("#lang-switch button");
+  buttons.forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.lang === Lang.current);
+    btn.addEventListener("click", () => {
+      Lang.set(btn.dataset.lang);
+      buttons.forEach(b => b.classList.toggle("active", b.dataset.lang === Lang.current));
+      renderAll();
+    });
+  });
+}
+
+/* Textos fixos fora das abas: subtítulo, abas, rodapé. */
+function applyStaticText() {
+  document.documentElement.lang = Lang.current;
+  document.querySelector(".brand-text p").textContent = t("app.subtitle");
+
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    const tab = btn.dataset.tab;
+    const badge = (tab === "summary" || tab === "inventory")
+      ? ' <span class="badge">API</span>' : "";
+    btn.innerHTML = t("tab." + tab) + badge;
+  });
+
+  const footer = document.querySelectorAll(".app-footer p");
+  if (footer[0]) footer[0].textContent = t("footer.disclaimer");
+  if (footer[1]) footer[1].textContent = t("footer.datasource");
+}
+
+/* ---------------------------------------------------------
+   TEMA claro/escuro
    --------------------------------------------------------- */
 function initTheme() {
   const saved = localStorage.getItem("sfl_eco_theme") || "light";
   applyTheme(saved);
-
   document.getElementById("theme-toggle").addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
     applyTheme(next);
@@ -35,20 +74,23 @@ function applyTheme(theme) {
 }
 
 /* ---------------------------------------------------------
-   Helpers de UI
+   Helpers
    --------------------------------------------------------- */
-
-/* Formata número: tira casas decimais desnecessárias */
 function fmt(n) {
   return Number.isInteger(n) ? n.toString() : n.toFixed(2);
 }
+function localeTime(ts) {
+  return new Date(ts).toLocaleTimeString(Lang.locale());
+}
+function localeDate(ts) {
+  return new Date(ts).toLocaleDateString(Lang.locale());
+}
 
-/* Monta a grade de "chips" de custo a partir de um objeto { wood: 10, ... }.
-   `state` opcional: "missing" (falta) ou "done" (já tem) muda a cor. */
+/* Grade de "chips" de custo. */
 function costGrid(cost, stateMap) {
   const entries = Object.entries(cost);
   if (entries.length === 0) {
-    return `<p class="note">Sem dados de custo cadastrados ainda para esta etapa.</p>`;
+    return `<p class="note">${t("exp.no_data")}</p>`;
   }
   const chips = entries.map(([res, amount]) => {
     const info = GAME_DATA.resources[res] || { label: res, icon: "❓" };
@@ -66,7 +108,7 @@ function costGrid(cost, stateMap) {
 }
 
 /* =========================================================
-   ABA: EXPANSÃO  (exemplo completo e funcional)
+   ABA: EXPANSÃO
    ========================================================= */
 function renderExpansionTab() {
   const panel = document.getElementById("tab-expansion");
@@ -77,52 +119,41 @@ function renderExpansionTab() {
 
   panel.innerHTML = `
     <div class="card">
-      <h2>🏝️ Custo de Expansão</h2>
-      <p class="note">
-        Escolha em que ilha você está. O cálculo mostra o total de recursos
-        para completar dali até o fim do jogo (incluindo os upgrades de ilha).
-        <br><strong>Obs:</strong> por enquanto usamos os <em>totais por ilha</em> —
-        o custo de cada nível individual a gente preenche depois.
-      </p>
+      <h2>${t("exp.title")}</h2>
+      <p class="note">${t("exp.intro")}<br><em>${t("exp.note_totals")}</em></p>
 
       <div class="field-row">
         <div>
-          <label for="exp-island">Sua ilha atual</label>
+          <label for="exp-island">${t("exp.your_island")}</label>
           <select id="exp-island">${islandOptions}</select>
         </div>
         <div style="flex:0">
-          <button class="btn" id="exp-calc">Calcular</button>
+          <button class="btn" id="exp-calc">${t("exp.calculate")}</button>
         </div>
       </div>
-
       <div id="exp-result"></div>
     </div>
 
     <div class="card">
-      <h3>O que você já tem (opcional)</h3>
-      <p class="note">
-        Preencha o que já tem no inventário para ver quanto <strong>falta</strong>.
-        Na Onda 2 isso vai ser preenchido automaticamente pela API.
-      </p>
+      <h3>${t("exp.owned_title")}</h3>
+      <p class="note">${t("exp.owned_intro")}</p>
       <div id="exp-owned-inputs" class="cost-grid"></div>
       <div style="margin-top:14px">
-        <button class="btn btn-ghost" id="exp-check">Ver o que falta</button>
+        <button class="btn btn-ghost" id="exp-check">${t("exp.see_missing")}</button>
       </div>
       <div id="exp-missing"></div>
     </div>
   `;
 
-  // --- ações ---
   const islandSelect = panel.querySelector("#exp-island");
   const ownedWrap    = panel.querySelector("#exp-owned-inputs");
 
   function showTotal() {
     const total = Calc.totalFromIsland(islandSelect.value);
     panel.querySelector("#exp-result").innerHTML = `
-      <h3>Total até o fim do jogo</h3>
+      <h3>${t("exp.total_title")}</h3>
       ${costGrid(total)}
     `;
-    // gera os inputs de "o que já tenho" com base nos recursos desse total
     ownedWrap.innerHTML = Object.keys(total).map(res => {
       const info = GAME_DATA.resources[res] || { label: res, icon: "❓" };
       return `
@@ -145,14 +176,12 @@ function renderExpansionTab() {
     });
     const missing = Calc.remaining(total, owned);
     const pct = Calc.progressPercent(total, owned);
-
-    // marca cada chip: verde se já tem tudo, vermelho se falta
     const stateMap = {};
     for (const [res, falta] of Object.entries(missing)) {
       stateMap[res] = falta === 0 ? "done" : "missing";
     }
     panel.querySelector("#exp-missing").innerHTML = `
-      <h3>Ainda falta &mdash; ${pct}% completo</h3>
+      <h3>${t("exp.missing_title", { pct })}</h3>
       ${costGrid(missing, stateMap)}
     `;
   }
@@ -160,36 +189,30 @@ function renderExpansionTab() {
   islandSelect.addEventListener("change", showTotal);
   panel.querySelector("#exp-calc").addEventListener("click", showTotal);
   panel.querySelector("#exp-check").addEventListener("click", showMissing);
-
-  showTotal(); // estado inicial
+  showTotal();
 }
 
 /* =========================================================
-   ABA: PLANTAÇÕES  (ranking de ROI — dados reais do jogo)
+   ABA: PLANTAÇÕES
    ========================================================= */
 function renderCropsTab() {
   const panel = document.getElementById("tab-crops");
 
   panel.innerHTML = `
     <div class="card">
-      <h2>🌾 Plantações &mdash; Lucro por Hora</h2>
-      <p class="note">
-        Ranking das plantações pelo lucro/hora (preço de venda &minus; custo da
-        semente, dividido pelo tempo de cultivo). Valores <strong>base</strong>:
-        não incluem boosts de skills, NFTs ou eventos.
-      </p>
+      <h2>${t("crops.title")}</h2>
+      <p class="note">${t("crops.intro")}</p>
 
       <div class="field-row">
         <div>
-          <label for="crop-level">Seu nível de Bumpkin</label>
+          <label for="crop-level">${t("crops.your_level")}</label>
           <input type="number" id="crop-level" min="1" max="100" value="100" />
         </div>
         <div>
-          <label for="crop-plots">Quantos plots você tem</label>
+          <label for="crop-plots">${t("crops.plots")}</label>
           <input type="number" id="crop-plots" min="1" value="1" />
         </div>
       </div>
-
       <div id="crop-result"></div>
     </div>
   `;
@@ -204,38 +227,36 @@ function renderCropsTab() {
 
     if (ranked.length === 0) {
       panel.querySelector("#crop-result").innerHTML =
-        `<p class="note warn">Nenhuma plantação desbloqueada nesse nível.</p>`;
+        `<p class="note warn">${t("crops.none")}</p>`;
       return;
     }
 
-    const rows = ranked.map((c, i) => {
-      const best = i === 0 ? "best-row" : "";
-      return `
-        <tr class="${best}">
-          <td>${c.icon} ${c.name}</td>
-          <td class="num">Lv ${c.level}</td>
-          <td class="num">${fmt(c.seedCost)}</td>
-          <td class="num">${fmt(c.sellPrice)}</td>
-          <td class="num">${formatDuration(c.growSeconds)}</td>
-          <td class="num">${c.profit.toFixed(2)}</td>
-          <td class="num strong">${c.profitPerHour.toFixed(2)}</td>
-          <td class="num strong">${(c.profitPerHour * plots).toFixed(2)}</td>
-        </tr>`;
-    }).join("");
+    const rows = ranked.map((c, i) => `
+      <tr class="${i === 0 ? "best-row" : ""}">
+        <td>${c.icon} ${c.name}</td>
+        <td class="num">Lv ${c.level}</td>
+        <td class="num">${fmt(c.seedCost)}</td>
+        <td class="num">${fmt(c.sellPrice)}</td>
+        <td class="num">${formatDuration(c.growSeconds)}</td>
+        <td class="num">${c.profit.toFixed(2)}</td>
+        <td class="num strong">${c.profitPerHour.toFixed(2)}</td>
+        <td class="num strong">${(c.profitPerHour * plots).toFixed(2)}</td>
+      </tr>`).join("");
 
     panel.querySelector("#crop-result").innerHTML = `
-      <p class="note">
-        🏆 Melhor opção agora: <strong>${ranked[0].icon} ${ranked[0].name}</strong>
-        &mdash; ${ranked[0].profitPerHour.toFixed(2)} Coins/hora por plot.
-      </p>
+      <p class="note">${t("crops.best", {
+        name: `${ranked[0].icon} ${ranked[0].name}`,
+        value: ranked[0].profitPerHour.toFixed(2)
+      })}</p>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Plantação</th><th class="num">Nível</th>
-              <th class="num">Semente</th><th class="num">Venda</th>
-              <th class="num">Tempo</th><th class="num">Lucro</th>
-              <th class="num">Lucro/h</th><th class="num">Lucro/h (${plots}× plots)</th>
+              <th>${t("crops.col_crop")}</th><th class="num">${t("crops.col_level")}</th>
+              <th class="num">${t("crops.col_seed")}</th><th class="num">${t("crops.col_sell")}</th>
+              <th class="num">${t("crops.col_time")}</th><th class="num">${t("crops.col_profit")}</th>
+              <th class="num">${t("crops.col_pph")}</th>
+              <th class="num">${t("crops.col_pph_plots", { plots })}</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -250,13 +271,12 @@ function renderCropsTab() {
 }
 
 /* =========================================================
-   ABA: RECURSOS  (tempos de respawn e rendimento por dia)
+   ABA: RECURSOS
    ========================================================= */
 function renderResourcesTab() {
   const panel = document.getElementById("tab-resources");
   const resList = Calc.listResources();
 
-  // monta uma linha com input de quantidade de nós para cada recurso
   const rows = resList.map(r => `
     <tr data-res="${r.key}">
       <td>${r.icon} ${r.label}</td>
@@ -271,21 +291,15 @@ function renderResourcesTab() {
 
   panel.innerHTML = `
     <div class="card">
-      <h2>🪵 Recursos &mdash; Rendimento Diário</h2>
-      <p class="note">
-        Cada nó "respawna" depois de um tempo. Informe quantos nós de cada
-        tipo você tem para ver o rendimento por dia. Valores <strong>base</strong>
-        (sem boosts de skills, NFTs ou ferramentas especiais).
-        <br><strong>Oil</strong> não tem tempo de respawn fixo no jogo, então
-        fica sem cálculo de "por dia" aqui.
-      </p>
+      <h2>${t("res.title")}</h2>
+      <p class="note">${t("res.intro")}<br><strong>Oil:</strong> ${t("res.note_oil")}</p>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Recurso</th><th class="num">Respawn</th>
-              <th class="num">Rende/coleta</th><th class="num">Seus nós</th>
-              <th class="num">Total/dia</th>
+              <th>${t("res.col_resource")}</th><th class="num">${t("res.col_respawn")}</th>
+              <th class="num">${t("res.col_yield")}</th><th class="num">${t("res.col_nodes")}</th>
+              <th class="num">${t("res.col_perday")}</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -310,34 +324,27 @@ function renderResourcesTab() {
 }
 
 /* =========================================================
-   ABA: COZINHA  (ranking de receitas por XP/hora)
+   ABA: COZINHA
    ========================================================= */
 function renderCookingTab() {
   const panel = document.getElementById("tab-cooking");
 
-  // construções disponíveis (extraídas das próprias receitas)
   const buildings = [...new Set(GAME_DATA.recipes.map(r => r.building))];
-  const buildingOpts = ['<option value="">Todas as construções</option>']
+  const buildingOpts = [`<option value="">${t("cook.all_buildings")}</option>`]
     .concat(buildings.map(b => `<option value="${b}">${b}</option>`))
     .join("");
 
   panel.innerHTML = `
     <div class="card">
-      <h2>🍳 Cozinha &mdash; XP por Hora</h2>
-      <p class="note">
-        Ranking das receitas pela experiência ganha por hora de preparo.
-        O "custo (crops)" soma só os ingredientes que são plantações &mdash;
-        ingredientes como ovo, leite e peixe não entram na conta (por isso o
-        <strong>?</strong>). Valores <strong>base</strong>.
-      </p>
+      <h2>${t("cook.title")}</h2>
+      <p class="note">${t("cook.intro")}</p>
 
       <div class="field-row">
         <div>
-          <label for="cook-building">Construção</label>
+          <label for="cook-building">${t("cook.building")}</label>
           <select id="cook-building">${buildingOpts}</select>
         </div>
       </div>
-
       <div id="cook-result"></div>
     </div>
   `;
@@ -348,16 +355,14 @@ function renderCookingTab() {
     const ranked = Calc.rankRecipes(buildingSelect.value || null);
 
     const rows = ranked.map((r, i) => {
-      const best = i === 0 ? "best-row" : "";
       const ingText = Object.entries(r.ingredients)
-        .map(([ing, qty]) => `${fmt(qty)}× ${ing}`)
-        .join(", ");
+        .map(([ing, qty]) => `${fmt(qty)}× ${ing}`).join(", ");
       const { cost, hasUnknown } = Calc.recipeCropCost(r);
       const costText = (cost > 0 ? cost.toFixed(2) : "0") + (hasUnknown ? " + ?" : "");
       const xph = r.xpPerHour === Infinity ? "∞" : r.xpPerHour.toFixed(0);
-      const time = r.cookSeconds === 0 ? "instantâneo" : formatDuration(r.cookSeconds);
+      const time = r.cookSeconds === 0 ? t("cook.instant") : formatDuration(r.cookSeconds);
       return `
-        <tr class="${best}">
+        <tr class="${i === 0 ? "best-row" : ""}">
           <td>${r.name}</td>
           <td>${r.building}</td>
           <td class="num">${r.xp}</td>
@@ -368,19 +373,24 @@ function renderCookingTab() {
         </tr>`;
     }).join("");
 
+    const scope = buildingSelect.value
+      ? t("cook.scope_in", { building: buildingSelect.value })
+      : t("cook.scope_overall");
+
     panel.querySelector("#cook-result").innerHTML = `
-      <p class="note">
-        🏆 Melhor XP/hora ${buildingSelect.value ? "em " + buildingSelect.value : "no geral"}:
-        <strong>${ranked[0].name}</strong>
-        &mdash; ${ranked[0].xpPerHour === Infinity ? "∞" : ranked[0].xpPerHour.toFixed(0)} XP/h.
-      </p>
+      <p class="note">${t("cook.best", {
+        scope,
+        name: ranked[0].name,
+        value: ranked[0].xpPerHour === Infinity ? "∞" : ranked[0].xpPerHour.toFixed(0)
+      })}</p>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Receita</th><th>Construção</th><th class="num">XP</th>
-              <th class="num">Tempo</th><th class="num">XP/h</th>
-              <th class="num">Custo (crops)</th><th>Ingredientes</th>
+              <th>${t("cook.col_recipe")}</th><th>${t("cook.col_building")}</th>
+              <th class="num">XP</th><th class="num">${t("cook.col_time")}</th>
+              <th class="num">XP/h</th><th class="num">${t("cook.col_cost")}</th>
+              <th>${t("cook.col_ing")}</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -394,7 +404,7 @@ function renderCookingTab() {
 }
 
 /* =========================================================
-   ABA: RESUMO  (puxa fazenda da API, mostra estatísticas)
+   ABA: RESUMO  (usa API)
    ========================================================= */
 function renderSummaryTab() {
   const panel = document.getElementById("tab-summary");
@@ -404,12 +414,9 @@ function renderSummaryTab() {
     if (!cached) {
       panel.innerHTML = `
         <div class="card">
-          <h2>📊 Resumo da Fazenda</h2>
-          <p class="note">
-            Clica em "Carregar fazenda" pra puxar seus dados via API.
-            Antes, garante que a chave e o ID estejam salvos em <strong>⚙️ Config</strong>.
-          </p>
-          <button class="btn" id="summary-load">Carregar fazenda</button>
+          <h2>${t("sum.title")}</h2>
+          <p class="note">${t("sum.intro")}</p>
+          <button class="btn" id="summary-load">${t("sum.load")}</button>
           <div id="summary-status" style="margin-top:14px"></div>
         </div>
       `;
@@ -421,14 +428,12 @@ function renderSummaryTab() {
 
   async function loadFarm() {
     const status = panel.querySelector("#summary-status");
-    if (status) status.innerHTML = `<p class="note">⏳ Buscando dados...</p>`;
+    if (status) status.innerHTML = `<p class="note">${t("sum.loading")}</p>`;
     try {
       await Api.loadFarm();
       render();
     } catch (e) {
-      if (status) {
-        status.innerHTML = `<p class="note warn">❌ ${e.message}</p>`;
-      }
+      if (status) status.innerHTML = `<p class="note warn">❌ ${e.message}</p>`;
     }
   }
 
@@ -438,28 +443,27 @@ function renderSummaryTab() {
     const inv = farm.inventory || {};
     const item = (n) => parseFloat(inv[n] || "0");
     const lvl = Calc.bumpkinLevel(bumpkin.experience || 0);
-
     const vipActive = farm.vip?.expiresAt > Date.now();
     const islandName = (farm.island?.type || "?").replace(/^./, c => c.toUpperCase());
-
     const skills = Object.keys(bumpkin.skills || {});
     const achievements = Object.keys(bumpkin.achievements || {});
 
     panel.innerHTML = `
       <div class="card">
-        <h2>📊 ${farm.username ? `Fazenda de ${farm.username}` : `Fazenda`} <span class="muted">#${farmData.id}</span></h2>
-        <p class="note">Atualizado às ${new Date(fetchedAt).toLocaleTimeString('pt-BR')}</p>
+        <h2>${farm.username ? t("sum.farm_of", { name: farm.username }) : t("sum.farm")}
+          <span class="muted">#${farmData.id}</span></h2>
+        <p class="note">${t("sum.updated_at", { time: localeTime(fetchedAt) })}</p>
 
         <div class="stat-grid">
           <div class="stat">
-            <div class="stat-label">Bumpkin</div>
+            <div class="stat-label">${t("sum.bumpkin")}</div>
             <div class="stat-value">Lv ${lvl.level}</div>
-            <div class="stat-sub">${Math.floor(lvl.currentXp).toLocaleString('pt-BR')} XP</div>
+            <div class="stat-sub">${Math.floor(lvl.currentXp).toLocaleString(Lang.locale())} XP</div>
             <div class="progress-bar"><div class="progress-fill" style="width:${lvl.progressPercent}%"></div></div>
-            <div class="stat-sub">${lvl.progressPercent}% pro nível ${lvl.level + 1}</div>
+            <div class="stat-sub">${t("sum.level_progress", { pct: lvl.progressPercent, n: lvl.level + 1 })}</div>
           </div>
           <div class="stat">
-            <div class="stat-label">Ilha</div>
+            <div class="stat-label">${t("sum.island")}</div>
             <div class="stat-value">${islandName}</div>
           </div>
           <div class="stat">
@@ -477,34 +481,34 @@ function renderSummaryTab() {
           ${vipActive ? `
             <div class="stat">
               <div class="stat-label">⭐ VIP</div>
-              <div class="stat-value">Ativo</div>
-              <div class="stat-sub">até ${new Date(farm.vip.expiresAt).toLocaleDateString('pt-BR')}</div>
+              <div class="stat-value">✓</div>
+              <div class="stat-sub">${t("sum.until", { date: localeDate(farm.vip.expiresAt) })}</div>
             </div>
-          ` : ''}
+          ` : ""}
         </div>
 
-        <h3>Nós no mapa</h3>
+        <h3>${t("sum.nodes_title")}</h3>
         <div class="stat-grid stat-grid-small">
-          <div class="stat"><div class="stat-value">🌾 ${item("Crop Plot")}</div><div class="stat-sub">plantios</div></div>
-          <div class="stat"><div class="stat-value">🌳 ${item("Tree")}</div><div class="stat-sub">árvores</div></div>
-          <div class="stat"><div class="stat-value">🪨 ${item("Stone Rock")}</div><div class="stat-sub">pedras</div></div>
-          <div class="stat"><div class="stat-value">⛓️ ${item("Iron Rock")}</div><div class="stat-sub">ferro</div></div>
-          <div class="stat"><div class="stat-value">🟡 ${item("Gold Rock")}</div><div class="stat-sub">ouro</div></div>
-          <div class="stat"><div class="stat-value">🔴 ${item("Crimstone Rock")}</div><div class="stat-sub">crimstone</div></div>
+          <div class="stat"><div class="stat-value">🌾 ${item("Crop Plot")}</div><div class="stat-sub">${t("sum.plots")}</div></div>
+          <div class="stat"><div class="stat-value">🌳 ${item("Tree")}</div><div class="stat-sub">${t("sum.trees")}</div></div>
+          <div class="stat"><div class="stat-value">🪨 ${item("Stone Rock")}</div><div class="stat-sub">${t("sum.stones")}</div></div>
+          <div class="stat"><div class="stat-value">⛓️ ${item("Iron Rock")}</div><div class="stat-sub">${t("sum.iron")}</div></div>
+          <div class="stat"><div class="stat-value">🟡 ${item("Gold Rock")}</div><div class="stat-sub">${t("sum.gold")}</div></div>
+          <div class="stat"><div class="stat-value">🔴 ${item("Crimstone Rock")}</div><div class="stat-sub">${t("sum.crimstone")}</div></div>
         </div>
 
         ${skills.length ? `
-          <h3>Skills (${skills.length})</h3>
-          <div class="chip-row">${skills.map(s => `<span class="chip">${s}</span>`).join('')}</div>
-        ` : ''}
+          <h3>${t("sum.skills", { n: skills.length })}</h3>
+          <div class="chip-row">${skills.map(s => `<span class="chip">${s}</span>`).join("")}</div>
+        ` : ""}
 
         ${achievements.length ? `
-          <h3>Conquistas (${achievements.length})</h3>
-          <div class="chip-row">${achievements.map(a => `<span class="chip chip-gold">${a}</span>`).join('')}</div>
-        ` : ''}
+          <h3>${t("sum.achievements", { n: achievements.length })}</h3>
+          <div class="chip-row">${achievements.map(a => `<span class="chip chip-gold">${a}</span>`).join("")}</div>
+        ` : ""}
 
         <div style="margin-top:18px">
-          <button class="btn btn-ghost" id="summary-reload">🔄 Atualizar</button>
+          <button class="btn btn-ghost" id="summary-reload">${t("common.update")}</button>
         </div>
         <div id="summary-status" style="margin-top:14px"></div>
       </div>
@@ -516,28 +520,28 @@ function renderSummaryTab() {
 }
 
 /* =========================================================
-   ABA: INVENTÁRIO  (lista categorizada do que a fazenda tem)
+   ABA: INVENTÁRIO  (usa API)
    ========================================================= */
 function renderInventoryTab() {
   const panel = document.getElementById("tab-inventory");
 
-  // Conjuntos de categorização (rule-based)
-  const CROP_NAMES   = new Set(GAME_DATA.crops.map(c => c.name));
-  const RESOURCES    = new Set(["Wood","Stone","Iron","Gold","Crimstone","Sunstone","Oil","Gem","Salt Rock"]);
-  const TOOLS        = new Set(["Axe","Pickaxe","Stone Pickaxe","Iron Pickaxe","Gold Pickaxe","Rod","Oil Drill","Sand Shovel","Sand Drill","Shovel","Rusty Shovel","Salt Rake","Crab Pot","Mariner Pot"]);
-  const BUILDINGS    = new Set(["Town Center","Market","Workbench","Fire Pit","Water Well","Compost Bin","Kitchen","Bakery","Deli","Smoothie Shack","Hen House","Barn","Greenhouse","Crafting Box","Tent","House","Manor","Mansion","Crop Machine","Toolshed","Warehouse"]);
-  const COLLECT      = new Set(["Basic Scarecrow","Scary Mike","Laurie the Chuckle Crow","Basic Bear","Time Warp Totem","Treasure Map","Magic Mushroom"]);
+  const CROP_NAMES = new Set(GAME_DATA.crops.map(c => c.name));
+  const RESOURCES  = new Set(["Wood","Stone","Iron","Gold","Crimstone","Sunstone","Oil","Gem","Salt Rock"]);
+  const TOOLS      = new Set(["Axe","Pickaxe","Stone Pickaxe","Iron Pickaxe","Gold Pickaxe","Rod","Oil Drill","Sand Shovel","Sand Drill","Shovel","Rusty Shovel","Salt Rake","Crab Pot","Mariner Pot"]);
+  const BUILDINGS  = new Set(["Town Center","Market","Workbench","Fire Pit","Water Well","Compost Bin","Kitchen","Bakery","Deli","Smoothie Shack","Hen House","Barn","Greenhouse","Crafting Box","Tent","House","Manor","Mansion","Crop Machine","Toolshed","Warehouse"]);
+  const COLLECT    = new Set(["Basic Scarecrow","Scary Mike","Laurie the Chuckle Crow","Basic Bear","Time Warp Totem","Treasure Map","Magic Mushroom"]);
 
+  /* devolve a CHAVE de categoria (i18n) de um item */
   function categorize(name) {
-    if (name.endsWith(" Seed") || name.endsWith(" Plant")) return "🌱 Sementes";
-    if (CROP_NAMES.has(name)) return "🌾 Plantações colhidas";
-    if (RESOURCES.has(name)) return "🪨 Recursos";
-    if (TOOLS.has(name)) return "🔨 Ferramentas";
-    if (BUILDINGS.has(name)) return "🏗️ Construções";
-    if (name.endsWith(" Land") || name === "Crop Plot" || name.endsWith(" Rock") || name === "Tree") return "🏝️ Terreno e nós";
-    if (COLLECT.has(name)) return "🎁 Colecionáveis";
-    if (["Wild Mushroom","Earthworm","Dung","Weed","Sprout Mix","Love Charm"].includes(name)) return "🪴 Diversos";
-    return "📦 Outros";
+    if (name.endsWith(" Seed") || name.endsWith(" Plant")) return "inv.cat_seeds";
+    if (CROP_NAMES.has(name)) return "inv.cat_crops";
+    if (RESOURCES.has(name)) return "inv.cat_resources";
+    if (TOOLS.has(name)) return "inv.cat_tools";
+    if (BUILDINGS.has(name)) return "inv.cat_buildings";
+    if (name.endsWith(" Land") || name === "Crop Plot" || name.endsWith(" Rock") || name === "Tree") return "inv.cat_land";
+    if (COLLECT.has(name)) return "inv.cat_collect";
+    if (["Wild Mushroom","Earthworm","Dung","Weed","Sprout Mix","Love Charm"].includes(name)) return "inv.cat_misc";
+    return "inv.cat_other";
   }
 
   function render() {
@@ -545,12 +549,9 @@ function renderInventoryTab() {
     if (!cached) {
       panel.innerHTML = `
         <div class="card">
-          <h2>📦 Inventário</h2>
-          <p class="note">
-            Clica em "Carregar inventário" pra puxar via API.
-            Antes, garante que a chave e o ID estejam salvos em <strong>⚙️ Config</strong>.
-          </p>
-          <button class="btn" id="inv-load">Carregar inventário</button>
+          <h2>${t("inv.title")}</h2>
+          <p class="note">${t("inv.intro")}</p>
+          <button class="btn" id="inv-load">${t("inv.load")}</button>
           <div id="inv-status" style="margin-top:14px"></div>
         </div>
       `;
@@ -562,7 +563,7 @@ function renderInventoryTab() {
 
   async function loadFarm() {
     const status = panel.querySelector("#inv-status");
-    if (status) status.innerHTML = `<p class="note">⏳ Buscando...</p>`;
+    if (status) status.innerHTML = `<p class="note">${t("inv.loading")}</p>`;
     try {
       await Api.loadFarm();
       render();
@@ -578,49 +579,38 @@ function renderInventoryTab() {
       const c = parseFloat(count);
       if (c === 0) continue;
       const cat = categorize(name);
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push({ name, count: c });
+      (groups[cat] = groups[cat] || []).push({ name, count: c });
     }
 
-    // ordem amigável das seções
     const order = [
-      "🏝️ Terreno e nós",
-      "🌱 Sementes",
-      "🌾 Plantações colhidas",
-      "🪨 Recursos",
-      "🔨 Ferramentas",
-      "🏗️ Construções",
-      "🎁 Colecionáveis",
-      "🪴 Diversos",
-      "📦 Outros"
+      "inv.cat_land", "inv.cat_seeds", "inv.cat_crops", "inv.cat_resources",
+      "inv.cat_tools", "inv.cat_buildings", "inv.cat_collect",
+      "inv.cat_misc", "inv.cat_other"
     ];
     const sortedCats = order.filter(c => groups[c]);
     const totalItems = Object.values(groups).reduce((a, g) => a + g.length, 0);
 
-    const sectionsHtml = sortedCats.map(cat => {
-      const items = groups[cat].sort((a, b) => a.name.localeCompare(b.name));
+    const sectionsHtml = sortedCats.map(catKey => {
+      const items = groups[catKey].sort((a, b) => a.name.localeCompare(b.name));
       const chips = items.map(i => `
         <div class="inv-chip">
           <div class="inv-name">${i.name}</div>
           <div class="inv-count">${Number.isInteger(i.count) ? i.count : i.count.toFixed(2)}</div>
         </div>
-      `).join('');
+      `).join("");
       return `
-        <h3>${cat} <span class="muted">(${items.length})</span></h3>
+        <h3>${t(catKey)} <span class="muted">(${items.length})</span></h3>
         <div class="inv-grid">${chips}</div>
       `;
-    }).join('');
+    }).join("");
 
     panel.innerHTML = `
       <div class="card">
-        <h2>📦 Inventário</h2>
-        <p class="note">
-          ${totalItems} itens diferentes &middot; atualizado às
-          ${new Date(fetchedAt).toLocaleTimeString('pt-BR')}.
-        </p>
+        <h2>${t("inv.title")}</h2>
+        <p class="note">${t("inv.count", { n: totalItems, time: localeTime(fetchedAt) })}</p>
         ${sectionsHtml}
         <div style="margin-top:18px">
-          <button class="btn btn-ghost" id="inv-reload">🔄 Atualizar</button>
+          <button class="btn btn-ghost" id="inv-reload">${t("common.update")}</button>
         </div>
         <div id="inv-status" style="margin-top:14px"></div>
       </div>
@@ -632,68 +622,47 @@ function renderInventoryTab() {
 }
 
 /* =========================================================
-   ABA: CONFIG  (chave de API + ID da fazenda + teste de conexão)
+   ABA: CONFIG
    ========================================================= */
 function renderSettingsTab() {
   const panel = document.getElementById("tab-settings");
 
   panel.innerHTML = `
     <div class="card">
-      <h2>⚙️ Chave de API</h2>
-      <p class="note warn">
-        <strong>Segurança:</strong> sua chave de API fica salva
-        <em>apenas neste navegador</em> e só é enviada para a API oficial do
-        Sunflower Land (através do nosso proxy). Nunca compartilhe ela em chats
-        ou prints. Se vazar, gere uma nova em
-        <code>Settings → Developer Options → API Key</code> no jogo.
-      </p>
-
-      <label for="api-key-input">Cole sua chave de API</label>
+      <h2>${t("set.key_title")}</h2>
+      <p class="note warn">${t("set.key_security")}</p>
+      <label for="api-key-input">${t("set.key_paste")}</label>
       <input type="text" id="api-key-input" placeholder="sfl...." autocomplete="off" />
-
       <div class="field-row" style="margin-top:14px">
-        <div style="flex:0"><button class="btn" id="api-save">Salvar chave</button></div>
-        <div style="flex:0"><button class="btn btn-danger" id="api-clear">Apagar</button></div>
+        <div style="flex:0"><button class="btn" id="api-save">${t("set.key_save")}</button></div>
+        <div style="flex:0"><button class="btn btn-danger" id="api-clear">${t("set.delete")}</button></div>
         <div id="api-status" style="align-self:center; font-size:14px;"></div>
       </div>
     </div>
 
     <div class="card">
-      <h2>🏝️ ID da Fazenda</h2>
-      <p class="note">
-        ID numérico da sua fazenda. Achável nas configurações do jogo,
-        ou inspecionando a URL/network quando você joga.
-      </p>
-
-      <label for="farm-id-input">ID da sua fazenda</label>
+      <h2>${t("set.farm_title")}</h2>
+      <p class="note">${t("set.farm_intro")}</p>
+      <label for="farm-id-input">${t("set.farm_label")}</label>
       <input type="text" id="farm-id-input" placeholder="ex: 12345" autocomplete="off" />
-
       <div class="field-row" style="margin-top:14px">
-        <div style="flex:0"><button class="btn" id="farm-save">Salvar ID</button></div>
-        <div style="flex:0"><button class="btn btn-danger" id="farm-clear">Apagar</button></div>
+        <div style="flex:0"><button class="btn" id="farm-save">${t("set.farm_save")}</button></div>
+        <div style="flex:0"><button class="btn btn-danger" id="farm-clear">${t("set.delete")}</button></div>
         <div id="farm-status" style="align-self:center; font-size:14px;"></div>
       </div>
     </div>
 
     <div class="card">
-      <h2>🔌 Testar conexão</h2>
-      <p class="note">
-        Faz uma chamada de verdade na API (via Cloudflare Worker) usando sua chave
-        e ID salvos. Útil pra confirmar que tudo está conectado antes das abas
-        Resumo e Inventário serem implementadas.
-      </p>
-      <button class="btn" id="test-conn">Testar agora</button>
+      <h2>${t("set.test_title")}</h2>
+      <p class="note">${t("set.test_intro")}</p>
+      <button class="btn" id="test-conn">${t("set.test_btn")}</button>
       <div id="test-result" style="margin-top:14px"></div>
     </div>
 
     <div class="card">
-      <h3>🐛 Debug — resposta crua da API</h3>
-      <p class="note">
-        Mostra o JSON cru da última requisição. <strong>Não cole isso em
-        público</strong> sem revisar — pode ter dados sensíveis (endereço de
-        carteira, etc).
-      </p>
-      <pre class="debug" id="debug-box">// nada por aqui ainda</pre>
+      <h3>${t("set.debug_title")}</h3>
+      <p class="note">${t("set.debug_intro")}</p>
+      <pre class="debug" id="debug-box">${t("set.debug_empty")}</pre>
     </div>
   `;
 
@@ -705,56 +674,43 @@ function renderSettingsTab() {
   const resultBox  = panel.querySelector("#test-result");
 
   function refreshKey() {
-    if (Api.hasKey()) {
-      keyStatus.innerHTML = `✅ Chave salva: <code>${Api.maskedKey()}</code>`;
-    } else {
-      keyStatus.textContent = "Nenhuma chave salva.";
-    }
+    keyStatus.innerHTML = Api.hasKey()
+      ? t("set.key_saved", { key: `<code>${Api.maskedKey()}</code>` })
+      : t("set.key_none");
   }
   function refreshFarm() {
-    if (Api.hasFarmId()) {
-      farmStatus.innerHTML = `✅ ID salvo: <code>${Api.getFarmId()}</code>`;
-    } else {
-      farmStatus.textContent = "Nenhum ID salvo.";
-    }
+    farmStatus.innerHTML = Api.hasFarmId()
+      ? t("set.farm_saved", { id: `<code>${Api.getFarmId()}</code>` })
+      : t("set.farm_none");
   }
 
-  // ações: chave
   panel.querySelector("#api-save").addEventListener("click", () => {
     const v = keyInput.value.trim();
-    if (!v) { keyStatus.textContent = "⚠️ Cole uma chave antes de salvar."; return; }
+    if (!v) { keyStatus.textContent = t("set.key_empty"); return; }
     Api.setKey(v); keyInput.value = ""; refreshKey();
   });
   panel.querySelector("#api-clear").addEventListener("click", () => {
     Api.clearKey(); refreshKey();
   });
 
-  // ações: farm id
   panel.querySelector("#farm-save").addEventListener("click", () => {
     const v = farmInput.value.trim();
-    if (!v) { farmStatus.textContent = "⚠️ Digite um ID antes de salvar."; return; }
+    if (!v) { farmStatus.textContent = t("set.farm_empty"); return; }
     Api.setFarmId(v); farmInput.value = ""; refreshFarm();
   });
   panel.querySelector("#farm-clear").addEventListener("click", () => {
     Api.clearFarmId(); refreshFarm();
   });
 
-  // ação: teste de conexão
   panel.querySelector("#test-conn").addEventListener("click", async () => {
-    resultBox.innerHTML = `<p class="note">⏳ Testando...</p>`;
-    debugBox.textContent = "// requisitando...";
+    resultBox.innerHTML = `<p class="note">${t("set.testing")}</p>`;
+    debugBox.textContent = t("set.requesting");
     try {
       const data = await Api.fetchFarm(Api.getFarmId());
-      resultBox.innerHTML = `
-        <p class="note" style="border-left-color: var(--accent-2);">
-          ✅ Conexão OK! A API respondeu. Veja o JSON cru abaixo —
-          quando quiser, copia os campos principais (sem dados sensíveis)
-          e me manda no chat pra eu construir as abas Resumo e Inventário.
-        </p>`;
+      resultBox.innerHTML = `<p class="note" style="border-left-color: var(--accent-2);">${t("set.test_ok")}</p>`;
       debugBox.textContent = JSON.stringify(data, null, 2);
     } catch (e) {
       resultBox.innerHTML = `<p class="note warn">❌ ${e.message}</p>`;
-      // mostra o detalhe (body da resposta) se houver, senão só a mensagem
       debugBox.textContent = e.detail || e.message;
     }
   });
