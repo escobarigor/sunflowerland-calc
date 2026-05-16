@@ -6,12 +6,12 @@
   <title>SFL EcoCalculator</title>
   <meta name="description" content="Calculadora de economia para Sunflower Land — expansões, plantações, recursos e mais." />
 
-  <!-- Fontes: Silkscreen (pixel, para o logo/títulos) + Fredoka (corpo, arredondada e amigável) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="css/style.css" />
+  <!-- Caminhos SEM pasta: os arquivos ficam na raiz do repositório -->
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <!-- ===================== CABEÇALHO ===================== -->
@@ -23,13 +23,16 @@
         <p>Calculadora de economia &middot; Sunflower Land</p>
       </div>
     </div>
-    <button id="theme-toggle" class="theme-toggle" title="Alternar tema" aria-label="Alternar tema">
-      <span class="theme-icon">🌙</span>
-    </button>
+    <div class="header-actions">
+      <!-- Widget de tradução automática (Google Translate) -->
+      <div id="google_translate_element" class="translate-box notranslate"></div>
+      <button id="theme-toggle" class="theme-toggle" title="Alternar tema" aria-label="Alternar tema">
+        <span class="theme-icon">🌙</span>
+      </button>
+    </div>
   </header>
 
   <!-- ===================== NAVEGAÇÃO (ABAS) ===================== -->
-  <!-- data-tab liga o botão ao painel #tab-<id>. data-wave marca a fase do roadmap. -->
   <nav class="tab-bar" id="tab-bar">
     <button class="tab-btn active" data-tab="expansion">🏝️ Expansão</button>
     <button class="tab-btn" data-tab="crops">🌾 Plantações</button>
@@ -41,51 +44,38 @@
   </nav>
 
   <main class="content">
-    <!-- ===== ABA: EXPANSÃO (implementada como exemplo funcional) ===== -->
-    <section class="tab-panel active" id="tab-expansion">
-      <!-- conteúdo gerado por app.js → renderExpansionTab() -->
-    </section>
-
-    <!-- ===== ABA: PLANTAÇÕES (implementada) ===== -->
-    <section class="tab-panel" id="tab-crops">
-      <!-- conteúdo gerado por app.js → renderCropsTab() -->
-    </section>
-
-    <!-- ===== ABA: RECURSOS (implementada) ===== -->
-    <section class="tab-panel" id="tab-resources">
-      <!-- conteúdo gerado por app.js → renderResourcesTab() -->
-    </section>
-
-    <!-- ===== ABA: COZINHA (implementada) ===== -->
-    <section class="tab-panel" id="tab-cooking">
-      <!-- conteúdo gerado por app.js → renderCookingTab() -->
-    </section>
-
-    <!-- ===== ABA: RESUMO (implementada, usa API) ===== -->
-    <section class="tab-panel" id="tab-summary">
-      <!-- conteúdo gerado por app.js → renderSummaryTab() -->
-    </section>
-
-    <!-- ===== ABA: INVENTÁRIO (implementada, usa API) ===== -->
-    <section class="tab-panel" id="tab-inventory">
-      <!-- conteúdo gerado por app.js → renderInventoryTab() -->
-    </section>
-
-    <!-- ===== ABA: CONFIG (chave de API + debug) ===== -->
-    <section class="tab-panel" id="tab-settings">
-      <!-- conteúdo gerado por app.js → renderSettingsTab() -->
-    </section>
+    <section class="tab-panel active" id="tab-expansion"></section>
+    <section class="tab-panel" id="tab-crops"></section>
+    <section class="tab-panel" id="tab-resources"></section>
+    <section class="tab-panel" id="tab-cooking"></section>
+    <section class="tab-panel" id="tab-summary"></section>
+    <section class="tab-panel" id="tab-inventory"></section>
+    <section class="tab-panel" id="tab-settings"></section>
   </main>
 
   <footer class="app-footer">
     <p>Projeto comunitário não-oficial. Não afiliado ao Sunflower Land.</p>
+    <p class="notranslate">Dados do jogo: github.com/sunflower-land/sunflower-land</p>
   </footer>
 
   <!-- Ordem importa: data → api → calc → tabs → app -->
-  <script src="js/data.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/calc.js"></script>
-  <script src="js/tabs.js"></script>
-  <script src="js/app.js"></script>
+  <script src="data.js"></script>
+  <script src="api.js"></script>
+  <script src="calc.js"></script>
+  <script src="tabs.js"></script>
+  <script src="app.js"></script>
+
+  <!-- Tradução automática via Google Translate -->
+  <script type="text/javascript">
+    function googleTranslateElementInit() {
+      new google.translate.TranslateElement({
+        pageLanguage: "pt",
+        includedLanguages: "en,es,fr,de,it,ru,zh-CN,ja,ko,ar,hi",
+        autoDisplay: false
+      }, "google_translate_element");
+    }
+  </script>
+  <script type="text/javascript"
+    src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 </body>
 </html>
