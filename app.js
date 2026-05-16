@@ -86,6 +86,15 @@ function localeDate(ts) {
   return new Date(ts).toLocaleDateString(Lang.locale());
 }
 
+/* Pega a fazenda: do cache se já carregada, senão busca via API.
+   Lança Error (mensagem traduzida) se faltar chave/ID ou a chamada falhar. */
+async function getFarm() {
+  const cached = Api.getCachedFarm();
+  if (cached) return cached.data;
+  await Api.loadFarm();
+  return Api.getCachedFarm().data;
+}
+
 /* Grade de "chips" de custo. */
 function costGrid(cost, stateMap) {
   const entries = Object.entries(cost);
@@ -143,6 +152,18 @@ function renderExpansionTab() {
       </div>
       <div id="exp-missing"></div>
     </div>
+
+    <div class="card">
+      <h2>${t("exp.plan_title")}</h2>
+      <p class="note">${t("exp.plan_intro")}</p>
+      <div class="field-row">
+        <div style="flex:0">
+          <button class="btn" id="exp-use-farm">${t("common.use_my_farm")}</button>
+        </div>
+        <div id="exp-plan-status" style="align-self:center;font-size:13px;"></div>
+      </div>
+      <div id="exp-plan-result"></div>
+    </div>
   `;
 
   const islandSelect = panel.querySelector("#exp-island");
@@ -186,9 +207,114 @@ function renderExpansionTab() {
     `;
   }
 
+  /* Nome do recurso no inventário da API, por chave interna */
+  const INV_NAME = {
+    wood: "Wood", stone: "Stone", iron: "Iron", gold: "Gold",
+    crimstone: "Crimstone", gem: "Gem", oil: "Oil"
+  };
+
+  /* Puxa a fazenda, preenche tudo e calcula o ETA. */
+  async function useFarm() {
+    const status = panel.querySelector("#exp-plan-status");
+    const result = panel.querySelector("#exp-plan-result");
+    status.textContent = t("common.loading");
+    result.innerHTML = "";
+    try {
+      const farm = await getFarm();
+      const islandType = farm.farm.island?.type || "basic";
+      const inv = farm.farm.inventory || {};
+
+      // ajusta o seletor pra ilha real e re-monta os inputs
+      if (Calc.getIsland(islandType)) islandSelect.value = islandType;
+      showTotal();
+
+      // preenche "o que você tem" com o inventário real
+      ownedWrap.querySelectorAll("input[data-res]").forEach(inp => {
+        const res = inp.dataset.res;
+        let have = 0;
+        if (res === "coins") have = farm.farm.coins || 0;
+        else if (INV_NAME[res]) have = parseFloat(inv[INV_NAME[res]] || "0") || 0;
+        inp.value = have;
+      });
+
+      // calcula o que falta + ETA
+      const total = Calc.totalFromIsland(islandSelect.value);
+      const owned = {};
+      ownedWrap.querySelectorAll("input[data-res]").forEach(inp => {
+        owned[inp.dataset.res] = parseFloat(inp.value) || 0;
+      });
+      const missing = Calc.remaining(total, owned);
+      const nodeCounts = Calc.farmNodeCounts(farm);
+      const eta = Calc.expansionEta(missing, nodeCounts);
+
+      renderEta(eta, islandSelect.value, nodeCounts);
+      status.textContent = t("exp.filled_from_farm");
+    } catch (e) {
+      status.innerHTML = `<span class="warn-text">❌ ${e.message}</span>`;
+    }
+  }
+
+  /* Desenha o painel de produção + tabela de ETA. */
+  function renderEta(eta, islandId, nodeCounts) {
+    const result = panel.querySelector("#exp-plan-result");
+    const islandName = (Calc.getIsland(islandId) || {}).name || islandId;
+
+    // produção diária (Painel de Produção)
+    const prodChips = Object.entries(nodeCounts)
+      .filter(([, n]) => n > 0)
+      .map(([res, n]) => {
+        const info = GAME_DATA.resources[res] || { label: res, icon: "❓" };
+        const perDay = Calc.resourcePerDay(res, n);
+        return `<div class="cost-chip"><span class="ico">${info.icon}</span>
+          <div><div class="val">${perDay ? perDay.toFixed(1) : "—"}/d</div>
+          <div class="name">${info.label} (${n})</div></div></div>`;
+      }).join("");
+
+    // tabela de ETA por recurso
+    const rows = Object.entries(eta.perRes).map(([res, d]) => {
+      const info = GAME_DATA.resources[res] || { label: res, icon: "❓" };
+      const etaText = d.days == null
+        ? `<span class="muted">${t("exp.eta_not_passive")}</span>`
+        : t("exp.eta_days", { days: d.days.toFixed(1) });
+      return `<tr>
+        <td>${info.icon} ${info.label}</td>
+        <td class="num">${fmt(d.needed)}</td>
+        <td class="num">${d.perDay ? d.perDay.toFixed(1) : "—"}</td>
+        <td class="num strong">${etaText}</td>
+      </tr>`;
+    }).join("");
+
+    // resumo
+    let summary;
+    if (Object.keys(eta.perRes).length === 0) {
+      summary = `<p class="note" style="border-left-color:var(--accent-2)">${t("exp.eta_all_ready")}</p>`;
+    } else if (eta.bottleneck) {
+      const bn = GAME_DATA.resources[eta.bottleneck] || { label: eta.bottleneck };
+      summary = `<p class="note">${t("exp.eta_summary", {
+        island: islandName, days: Math.ceil(eta.maxDays), res: bn.label
+      })}</p>`;
+    } else {
+      summary = `<p class="note warn">${t("exp.eta_no_node")}</p>`;
+    }
+
+    result.innerHTML = `
+      <h3>${t("exp.prod_title")}</h3>
+      ${prodChips ? `<div class="cost-grid">${prodChips}</div>`
+                  : `<p class="note warn">${t("exp.no_nodes")}</p>`}
+      <h3>${t("exp.eta_title")}</h3>
+      ${summary}
+      ${rows ? `<div class="table-wrap"><table class="data-table">
+        <thead><tr>
+          <th>${t("exp.eta_col_res")}</th><th class="num">${t("exp.eta_col_need")}</th>
+          <th class="num">${t("exp.eta_col_perday")}</th><th class="num">${t("exp.eta_col_eta")}</th>
+        </tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+    `;
+  }
+
   islandSelect.addEventListener("change", showTotal);
   panel.querySelector("#exp-calc").addEventListener("click", showTotal);
   panel.querySelector("#exp-check").addEventListener("click", showMissing);
+  panel.querySelector("#exp-use-farm").addEventListener("click", useFarm);
   showTotal();
 }
 
@@ -213,12 +339,34 @@ function renderCropsTab() {
           <input type="number" id="crop-plots" min="1" value="1" />
         </div>
       </div>
+      <div class="field-row">
+        <div style="flex:0">
+          <button class="btn btn-ghost" id="crop-use-farm">${t("common.use_my_farm")}</button>
+        </div>
+        <div id="crop-farm-status" style="align-self:center;font-size:13px;"></div>
+      </div>
       <div id="crop-result"></div>
     </div>
   `;
 
   const levelInput = panel.querySelector("#crop-level");
   const plotsInput = panel.querySelector("#crop-plots");
+
+  async function useFarm() {
+    const status = panel.querySelector("#crop-farm-status");
+    status.textContent = t("common.loading");
+    try {
+      const farm = await getFarm();
+      const xp = farm.farm.bumpkin?.experience || 0;
+      const plots = parseFloat(farm.farm.inventory?.["Crop Plot"] || "1") || 1;
+      levelInput.value = Calc.bumpkinLevel(xp).level;
+      plotsInput.value = plots;
+      render();
+      status.textContent = t("crops.filled_from_farm");
+    } catch (e) {
+      status.innerHTML = `<span class="warn-text">❌ ${e.message}</span>`;
+    }
+  }
 
   function render() {
     const level = parseInt(levelInput.value) || 1;
@@ -267,6 +415,7 @@ function renderCropsTab() {
 
   levelInput.addEventListener("input", render);
   plotsInput.addEventListener("input", render);
+  panel.querySelector("#crop-use-farm").addEventListener("click", useFarm);
   render();
 }
 
@@ -293,6 +442,12 @@ function renderResourcesTab() {
     <div class="card">
       <h2>${t("res.title")}</h2>
       <p class="note">${t("res.intro")}<br><strong>Oil:</strong> ${t("res.note_oil")}</p>
+      <div class="field-row">
+        <div style="flex:0">
+          <button class="btn" id="res-use-farm">${t("common.use_my_farm")}</button>
+        </div>
+        <div id="res-farm-status" style="align-self:center;font-size:13px;"></div>
+      </div>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
@@ -318,8 +473,26 @@ function renderResourcesTab() {
     });
   }
 
+  async function useFarm() {
+    const status = panel.querySelector("#res-farm-status");
+    status.textContent = t("common.loading");
+    try {
+      const farm = await getFarm();
+      const counts = Calc.farmNodeCounts(farm);
+      panel.querySelectorAll("input[data-node]").forEach(inp => {
+        const key = inp.dataset.node;
+        if (counts[key] != null) inp.value = counts[key];
+      });
+      recalc();
+      status.textContent = t("res.filled_from_farm");
+    } catch (e) {
+      status.innerHTML = `<span class="warn-text">❌ ${e.message}</span>`;
+    }
+  }
+
   panel.querySelectorAll("input[data-node]").forEach(inp =>
     inp.addEventListener("input", recalc));
+  panel.querySelector("#res-use-farm").addEventListener("click", useFarm);
   recalc();
 }
 

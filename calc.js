@@ -98,7 +98,9 @@ const Calc = {
     const r = GAME_DATA.resources[resKey];
     if (!r || !r.gatherable || !r.recoverySeconds) return null;
     const cyclesPerDay = 86400 / r.recoverySeconds;
-    return cyclesPerDay * r.baseYield * (nodeCount || 1);
+    // nodeCount undefined => 1 (uso padrão); 0 explícito => 0 (produção zero)
+    const n = (nodeCount === undefined || nodeCount === null) ? 1 : nodeCount;
+    return cyclesPerDay * r.baseYield * n;
   },
 
   /* Lista os recursos coletáveis com o rendimento diário calculado. */
@@ -166,6 +168,38 @@ const Calc = {
       progressXp, neededXp,
       progressPercent: pct
     };
+  },
+
+  /* ---------- PRODUÇÃO REAL DA FAZENDA ----------
+     Conta os nós de recurso da fazenda (vindos do inventário da API). */
+  farmNodeCounts(farmData) {
+    const inv = (farmData && farmData.farm && farmData.farm.inventory) || {};
+    const num = (n) => parseFloat(inv[n] || "0") || 0;
+    return {
+      wood:      num("Tree"),
+      stone:     num("Stone Rock"),
+      iron:      num("Iron Rock"),
+      gold:      num("Gold Rock"),
+      crimstone: num("Crimstone Rock"),
+      sunstone:  num("Sunstone Rock")
+    };
+  },
+
+  /* Dado o que FALTA e quantos nós a fazenda tem, calcula o ETA (em dias)
+     de cada recurso. Recursos sem produção por nó (coins, gem, oil)
+     ficam com days = null. Retorna também o gargalo (recurso mais lento). */
+  expansionEta(missing, nodeCounts) {
+    const perRes = {};
+    let maxDays = 0;
+    let bottleneck = null;
+    for (const [res, needed] of Object.entries(missing || {})) {
+      if (needed <= 0) continue;
+      const perDay = this.resourcePerDay(res, (nodeCounts && nodeCounts[res]) || 0);
+      const days = (perDay && perDay > 0) ? needed / perDay : null;
+      perRes[res] = { needed, perDay: perDay || 0, days };
+      if (days != null && days > maxDays) { maxDays = days; bottleneck = res; }
+    }
+    return { perRes, maxDays, bottleneck };
   }
 };
 
