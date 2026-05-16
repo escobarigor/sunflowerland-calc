@@ -45,7 +45,7 @@ const Api = {
     let res;
     try {
       res = await fetch(url, {
-        headers: { "Authorization": `Bearer ${key}` }
+        headers: { "x-api-key": key }
       });
     } catch (e) {
       throw new Error("Falha de rede. O carteiro (Worker) pode estar fora do ar.");
