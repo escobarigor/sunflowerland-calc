@@ -170,6 +170,13 @@ const Calc = {
     };
   },
 
+  /* XP total acumulada para alcançar um nível do Bumpkin. */
+  xpForLevel(level) {
+    const tbl = GAME_DATA.bumpkinLevels;
+    if (level < 1) return 0;
+    return tbl[level - 1] ?? tbl[tbl.length - 1];
+  },
+
   /* ---------- PRODUÇÃO REAL DA FAZENDA ----------
      Conta os nós de recurso da fazenda (vindos do inventário da API). */
   farmNodeCounts(farmData) {
@@ -185,21 +192,24 @@ const Calc = {
     };
   },
 
-  /* Dado o que FALTA e quantos nós a fazenda tem, calcula o ETA (em dias)
-     de cada recurso. Recursos sem produção por nó (coins, gem, oil)
-     ficam com days = null. Retorna também o gargalo (recurso mais lento). */
-  expansionEta(missing, nodeCounts) {
-    const perRes = {};
-    let maxDays = 0;
-    let bottleneck = null;
-    for (const [res, needed] of Object.entries(missing || {})) {
-      if (needed <= 0) continue;
-      const perDay = this.resourcePerDay(res, (nodeCounts && nodeCounts[res]) || 0);
-      const days = (perDay && perDay > 0) ? needed / perDay : null;
-      perRes[res] = { needed, perDay: perDay || 0, days };
-      if (days != null && days > maxDays) { maxDays = days; bottleneck = res; }
+  /* Dada uma lista de timestamps "readyAt" (ms), conta quantos já estão
+     prontos e quanto falta para o próximo. */
+  readinessFromReadyAts(readyAts) {
+    const now = Date.now();
+    let ready = 0;
+    let nextMs = Infinity;
+    for (const readyAt of readyAts) {
+      if (readyAt <= now) {
+        ready++;
+      } else {
+        nextMs = Math.min(nextMs, readyAt - now);
+      }
     }
-    return { perRes, maxDays, bottleneck };
+    return {
+      ready,
+      total: readyAts.length,
+      nextInSec: nextMs === Infinity ? null : Math.round(nextMs / 1000)
+    };
   }
 };
 

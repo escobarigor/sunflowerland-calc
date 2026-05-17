@@ -21,6 +21,7 @@ function renderAll() {
   renderCookingTab();
   renderSummaryTab();
   renderInventoryTab();
+  renderTasksTab();
   renderSettingsTab();
 }
 
@@ -46,7 +47,7 @@ function applyStaticText() {
 
   document.querySelectorAll(".tab-btn").forEach(btn => {
     const tab = btn.dataset.tab;
-    const badge = (tab === "summary" || tab === "inventory")
+    const badge = (tab === "summary" || tab === "inventory" || tab === "tasks")
       ? ' <span class="badge">API</span>' : "";
     btn.innerHTML = t("tab." + tab) + badge;
   });
@@ -520,6 +521,31 @@ function renderCookingTab() {
       </div>
       <div id="cook-result"></div>
     </div>
+
+    <div class="card">
+      <h2>${t("cook.plan_title")}</h2>
+      <p class="note">${t("cook.plan_intro")}</p>
+      <div class="field-row">
+        <div>
+          <label for="plan-cur">${t("cook.cur_level")}</label>
+          <input type="number" id="plan-cur" min="1" max="100" value="1" />
+        </div>
+        <div>
+          <label for="plan-target">${t("cook.target_level")}</label>
+          <input type="number" id="plan-target" min="2" max="100" value="11" />
+        </div>
+        <div style="flex:0; align-self:flex-end">
+          <button class="btn" id="plan-calc">${t("cook.plan_btn")}</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <div style="flex:0">
+          <button class="btn btn-ghost" id="plan-use-farm">${t("common.use_my_farm")}</button>
+        </div>
+        <div id="plan-farm-status" style="align-self:center;font-size:13px;"></div>
+      </div>
+      <div id="plan-result"></div>
+    </div>
   `;
 
   const buildingSelect = panel.querySelector("#cook-building");
@@ -574,6 +600,78 @@ function renderCookingTab() {
 
   buildingSelect.addEventListener("change", render);
   render();
+
+  /* ----- Planejador de Nível ----- */
+  const curInput    = panel.querySelector("#plan-cur");
+  const targetInput = panel.querySelector("#plan-target");
+
+  function renderPlan() {
+    const cur = parseInt(curInput.value) || 1;
+    const target = parseInt(targetInput.value) || (cur + 1);
+    const box = panel.querySelector("#plan-result");
+
+    if (target <= cur) {
+      box.innerHTML = `<p class="note warn">${t("cook.plan_invalid")}</p>`;
+      return;
+    }
+
+    const gap = Calc.xpForLevel(target) - Calc.xpForLevel(cur);
+
+    // melhores receitas pra grindar: ignora as instantâneas (especiais)
+    const recipes = Calc.rankRecipes()
+      .filter(r => r.cookSeconds > 0)
+      .slice(0, 6);
+
+    const rows = recipes.map(r => {
+      const cooks = Math.ceil(gap / r.xp);
+      const totalSec = cooks * r.cookSeconds;
+      return `<tr>
+        <td>${r.name}</td>
+        <td>${r.building}</td>
+        <td class="num">${r.xp}</td>
+        <td class="num strong">${cooks}×</td>
+        <td class="num">${formatDuration(totalSec)}</td>
+      </tr>`;
+    }).join("");
+
+    box.innerHTML = `
+      <p class="note">${t("cook.plan_gap", {
+        xp: gap.toLocaleString(Lang.locale()), from: cur, to: target
+      })}</p>
+      <p class="note">${t("cook.plan_recipes")}</p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr>
+            <th>${t("cook.col_recipe")}</th><th>${t("cook.col_building")}</th>
+            <th class="num">XP</th><th class="num">${t("cook.plan_col_cooks")}</th>
+            <th class="num">${t("cook.plan_col_time")}</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function planUseFarm() {
+    const status = panel.querySelector("#plan-farm-status");
+    status.textContent = t("common.loading");
+    try {
+      const farm = await getFarm();
+      const lvl = Calc.bumpkinLevel(farm.farm.bumpkin?.experience || 0).level;
+      curInput.value = lvl;
+      if (parseInt(targetInput.value) <= lvl) targetInput.value = lvl + 1;
+      renderPlan();
+      status.textContent = t("cook.plan_filled", { level: lvl });
+    } catch (e) {
+      status.innerHTML = `<span class="warn-text">❌ ${e.message}</span>`;
+    }
+  }
+
+  curInput.addEventListener("input", renderPlan);
+  targetInput.addEventListener("input", renderPlan);
+  panel.querySelector("#plan-calc").addEventListener("click", renderPlan);
+  panel.querySelector("#plan-use-farm").addEventListener("click", planUseFarm);
+  renderPlan();
 }
 
 /* =========================================================
@@ -581,6 +679,89 @@ function renderCookingTab() {
    ========================================================= */
 function renderSummaryTab() {
   const panel = document.getElementById("tab-summary");
+
+  /* readyAt (ms) de cada nó de uma coleção. tsPath ex: ["wood","choppedAt"] */
+  function nodeReadyAts(coll, tsPath, recoverySec) {
+    return Object.values(coll || {}).map(node => {
+      let ts = node;
+      for (const p of tsPath) ts = ts && ts[p];
+      return (ts || 0) + recoverySec * 1000;
+    });
+  }
+  /* readyAt de cada plantio — usa o boostedTime que a própria API fornece */
+  function cropReadyAts(crops) {
+    return Object.values(crops || {}).map(c => {
+      const crop = c.crop || {};
+      const def = GAME_DATA.crops.find(x => x.name === crop.name);
+      const growMs = def ? def.growSeconds * 1000 : 0;
+      return (crop.plantedAt || 0) + growMs - (crop.boostedTime || 0);
+    });
+  }
+
+  /* Seção "Pronto Agora" — o que dá pra colher já */
+  function readyNowSection(farm) {
+    const groups = [
+      { icon: "🌳", label: t("sum.trees"),     ats: nodeReadyAts(farm.trees,      ["wood","choppedAt"], 7200) },
+      { icon: "🪨", label: t("sum.stones"),    ats: nodeReadyAts(farm.stones,     ["stone","minedAt"], 14400) },
+      { icon: "⛓️", label: t("sum.iron"),      ats: nodeReadyAts(farm.iron,       ["stone","minedAt"], 28800) },
+      { icon: "🟡", label: t("sum.gold"),      ats: nodeReadyAts(farm.gold,       ["stone","minedAt"], 86400) },
+      { icon: "🔴", label: t("sum.crimstone"), ats: nodeReadyAts(farm.crimstones, ["stone","minedAt"], 86400) },
+      { icon: "🌾", label: t("sum.plots"),     ats: cropReadyAts(farm.crops) }
+    ].filter(g => g.ats.length > 0);
+    if (!groups.length) return "";
+
+    const cards = groups.map(g => {
+      const r = Calc.readinessFromReadyAts(g.ats);
+      const next = r.nextInSec == null
+        ? `<div class="stat-sub" style="color:var(--accent-2)">${t("sum.ready_all")}</div>`
+        : `<div class="stat-sub">${t("sum.ready_next", { time: formatDuration(r.nextInSec) })}</div>`;
+      return `<div class="stat">
+        <div class="stat-value">${g.icon} ${r.ready}/${r.total}</div>
+        <div class="stat-sub">${g.label}</div>
+        ${next}
+      </div>`;
+    }).join("");
+    return `<h3>${t("sum.ready_title")}</h3>
+      <p class="note">${t("sum.ready_intro")}</p>
+      <div class="stat-grid stat-grid-small">${cards}</div>`;
+  }
+
+  /* Seção "Histórico" — evolução de coins/FLOWER/nível entre carregamentos */
+  function historySection() {
+    const hist = Api.getHistory();
+    if (hist.length < 2) {
+      return `<h3>${t("sum.hist_title")}</h3><p class="note">${t("sum.hist_empty")}</p>`;
+    }
+    const recent = hist.slice(-8).reverse();
+    const delta = (cur, prev, dec) => {
+      if (prev == null) return "";
+      const d = cur - prev;
+      if (Math.abs(d) < (dec ? 0.01 : 1)) return "";
+      const sign = d > 0 ? "+" : "";
+      const cls = d > 0 ? "delta-up" : "delta-down";
+      return ` <span class="${cls}">${sign}${dec ? d.toFixed(2) : Math.round(d)}</span>`;
+    };
+    const rows = recent.map((s, i) => {
+      const prev = recent[i + 1];
+      const lvl = Calc.bumpkinLevel(s.xp).level;
+      return `<tr>
+        <td>${localeDate(s.t)} ${localeTime(s.t)}</td>
+        <td class="num">${s.coins.toFixed(0)}${delta(s.coins, prev && prev.coins, false)}</td>
+        <td class="num">${s.flower.toFixed(2)}${delta(s.flower, prev && prev.flower, true)}</td>
+        <td class="num">Lv ${lvl}</td>
+      </tr>`;
+    }).join("");
+    return `<h3>${t("sum.hist_title")}</h3>
+      <p class="note">${t("sum.hist_intro")}</p>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr>
+          <th>${t("sum.hist_when")}</th><th class="num">🪙 Coins</th>
+          <th class="num">🌸 FLOWER</th><th class="num">${t("sum.bumpkin")}</th>
+        </tr></thead><tbody>${rows}</tbody></table></div>
+      <div style="margin-top:10px">
+        <button class="btn btn-danger" id="hist-clear">${t("sum.hist_clear")}</button>
+      </div>`;
+  }
 
   function render() {
     const cached = Api.getCachedFarm();
@@ -680,6 +861,9 @@ function renderSummaryTab() {
           <div class="chip-row">${achievements.map(a => `<span class="chip chip-gold">${a}</span>`).join("")}</div>
         ` : ""}
 
+        ${readyNowSection(farm)}
+        ${historySection()}
+
         <div style="margin-top:18px">
           <button class="btn btn-ghost" id="summary-reload">${t("common.update")}</button>
         </div>
@@ -687,6 +871,11 @@ function renderSummaryTab() {
       </div>
     `;
     panel.querySelector("#summary-reload").addEventListener("click", loadFarm);
+    const histClear = panel.querySelector("#hist-clear");
+    if (histClear) histClear.addEventListener("click", () => {
+      Api.clearHistory();
+      render();
+    });
   }
 
   render();
@@ -795,6 +984,111 @@ function renderInventoryTab() {
 }
 
 /* =========================================================
+   ABA: TAREFAS  (entregas + bounties da API)
+   ========================================================= */
+function renderTasksTab() {
+  const panel = document.getElementById("tab-tasks");
+
+  /* Formata uma recompensa { coins?, sfl?, items? } */
+  function fmtReward(r) {
+    if (!r) return "—";
+    const parts = [];
+    if (r.coins) parts.push(`${r.coins} 🪙`);
+    if (r.sfl)   parts.push(`${r.sfl} 🌸`);
+    if (r.items) for (const [n, q] of Object.entries(r.items)) parts.push(`${q}× ${n}`);
+    return parts.length ? parts.join(", ") : "—";
+  }
+  /* Valor pra ordenar — só coins vira número; resto vai pro fim */
+  function rewardValue(r) {
+    return (r && r.coins) ? r.coins : -1;
+  }
+
+  function render() {
+    const cached = Api.getCachedFarm();
+    if (!cached) {
+      panel.innerHTML = `
+        <div class="card">
+          <h2>${t("tasks.title")}</h2>
+          <p class="note">${t("tasks.intro")}</p>
+          <button class="btn" id="tasks-load">${t("tasks.load")}</button>
+          <div id="tasks-status" style="margin-top:14px"></div>
+        </div>`;
+      panel.querySelector("#tasks-load").addEventListener("click", loadFarm);
+      return;
+    }
+    renderWithData(cached.data, cached.fetchedAt);
+  }
+
+  async function loadFarm() {
+    const status = panel.querySelector("#tasks-status");
+    if (status) status.innerHTML = `<p class="note">${t("tasks.loading")}</p>`;
+    try {
+      await Api.loadFarm();
+      render();
+    } catch (e) {
+      if (status) status.innerHTML = `<p class="note warn">❌ ${e.message}</p>`;
+    }
+  }
+
+  function renderWithData(farmData, fetchedAt) {
+    const farm = farmData.farm;
+    const orders   = (farm.delivery && farm.delivery.orders) || [];
+    const bounties = (farm.bounties && farm.bounties.requests) || [];
+
+    // entregas — ordenadas por valor de coins
+    const delRows = [...orders]
+      .sort((a, b) => rewardValue(b.reward) - rewardValue(a.reward))
+      .map(o => {
+        const wants = Object.entries(o.items || {})
+          .map(([n, q]) => `${q}× ${n}`).join(", ");
+        return `<tr>
+          <td>${o.from || "?"}</td>
+          <td>${wants || "—"}</td>
+          <td class="num strong">${fmtReward(o.reward)}</td>
+        </tr>`;
+      }).join("");
+
+    // bounties — a recompensa fica no próprio objeto
+    const bRows = [...bounties]
+      .sort((a, b) => rewardValue(b) - rewardValue(a))
+      .map(b => `<tr>
+        <td>${b.name || "?"}${b.level ? ` <span class="muted">Lv ${b.level}</span>` : ""}</td>
+        <td class="num strong">${fmtReward(b)}</td>
+      </tr>`).join("");
+
+    panel.innerHTML = `
+      <div class="card">
+        <h2>${t("tasks.title")}</h2>
+        <p class="note">${t("tasks.updated", { time: localeTime(fetchedAt) })}</p>
+
+        <h3>${t("tasks.deliveries_title")} <span class="muted">(${orders.length})</span></h3>
+        ${orders.length ? `<div class="table-wrap"><table class="data-table">
+          <thead><tr>
+            <th>${t("tasks.del_from")}</th><th>${t("tasks.del_wants")}</th>
+            <th class="num">${t("tasks.del_reward")}</th>
+          </tr></thead><tbody>${delRows}</tbody></table></div>`
+          : `<p class="note">${t("tasks.none_del")}</p>`}
+
+        <h3>${t("tasks.bounties_title")} <span class="muted">(${bounties.length})</span></h3>
+        ${bounties.length ? `<div class="table-wrap"><table class="data-table">
+          <thead><tr>
+            <th>${t("tasks.bounty_deliver")}</th><th class="num">${t("tasks.bounty_reward")}</th>
+          </tr></thead><tbody>${bRows}</tbody></table></div>`
+          : `<p class="note">${t("tasks.none_bounty")}</p>`}
+
+        <div style="margin-top:18px">
+          <button class="btn btn-ghost" id="tasks-reload">${t("common.update")}</button>
+        </div>
+        <div id="tasks-status" style="margin-top:14px"></div>
+      </div>
+    `;
+    panel.querySelector("#tasks-reload").addEventListener("click", loadFarm);
+  }
+
+  render();
+}
+
+/* =========================================================
    ABA: CONFIG
    ========================================================= */
 function renderSettingsTab() {
@@ -804,25 +1098,14 @@ function renderSettingsTab() {
     <div class="card">
       <h2>${t("set.key_title")}</h2>
       <p class="note warn">${t("set.key_security")}</p>
+      <p class="note">${t("set.key_only")}</p>
       <label for="api-key-input">${t("set.key_paste")}</label>
       <input type="text" id="api-key-input" placeholder="sfl...." autocomplete="off" />
       <div class="field-row" style="margin-top:14px">
         <div style="flex:0"><button class="btn" id="api-save">${t("set.key_save")}</button></div>
         <div style="flex:0"><button class="btn btn-danger" id="api-clear">${t("set.delete")}</button></div>
-        <div id="api-status" style="align-self:center; font-size:14px;"></div>
       </div>
-    </div>
-
-    <div class="card">
-      <h2>${t("set.farm_title")}</h2>
-      <p class="note">${t("set.farm_intro")}</p>
-      <label for="farm-id-input">${t("set.farm_label")}</label>
-      <input type="text" id="farm-id-input" placeholder="ex: 12345" autocomplete="off" />
-      <div class="field-row" style="margin-top:14px">
-        <div style="flex:0"><button class="btn" id="farm-save">${t("set.farm_save")}</button></div>
-        <div style="flex:0"><button class="btn btn-danger" id="farm-clear">${t("set.delete")}</button></div>
-        <div id="farm-status" style="align-self:center; font-size:14px;"></div>
-      </div>
+      <div id="api-status" style="margin-top:12px; font-size:14px;"></div>
     </div>
 
     <div class="card">
@@ -830,6 +1113,18 @@ function renderSettingsTab() {
       <p class="note">${t("set.test_intro")}</p>
       <button class="btn" id="test-conn">${t("set.test_btn")}</button>
       <div id="test-result" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h3>${t("set.farm_title")}</h3>
+      <p class="note">${t("set.farm_optional")}</p>
+      <label for="farm-id-input">${t("set.farm_label")}</label>
+      <input type="text" id="farm-id-input" placeholder="${t("set.farm_ph")}" autocomplete="off" />
+      <div class="field-row" style="margin-top:14px">
+        <div style="flex:0"><button class="btn btn-ghost" id="farm-save">${t("set.farm_save")}</button></div>
+        <div style="flex:0"><button class="btn btn-danger" id="farm-clear">${t("set.farm_clear_btn")}</button></div>
+        <div id="farm-status" style="align-self:center; font-size:14px;"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -847,23 +1142,29 @@ function renderSettingsTab() {
   const resultBox  = panel.querySelector("#test-result");
 
   function refreshKey() {
-    keyStatus.innerHTML = Api.hasKey()
-      ? t("set.key_saved", { key: `<code>${Api.maskedKey()}</code>` })
-      : t("set.key_none");
+    if (!Api.hasKey()) { keyStatus.innerHTML = t("set.key_none"); return; }
+    const detected = Api.farmIdFromKey();
+    let msg = t("set.key_saved", { key: `<code>${Api.maskedKey()}</code>` });
+    msg += detected
+      ? `<br>${t("set.key_detected_id", { id: `<code>${detected}</code>` })}`
+      : `<br><span class="warn-text">${t("set.key_no_id")}</span>`;
+    keyStatus.innerHTML = msg;
   }
   function refreshFarm() {
-    farmStatus.innerHTML = Api.hasFarmId()
-      ? t("set.farm_saved", { id: `<code>${Api.getFarmId()}</code>` })
-      : t("set.farm_none");
+    const eff = Api.effectiveFarmId();
+    if (!eff) { farmStatus.innerHTML = t("set.farm_none"); return; }
+    const src = Api.hasFarmId() ? t("set.farm_src_manual") : t("set.farm_src_key");
+    farmStatus.innerHTML = t("set.farm_using", { id: `<code>${eff}</code>`, src });
   }
 
   panel.querySelector("#api-save").addEventListener("click", () => {
     const v = keyInput.value.trim();
     if (!v) { keyStatus.textContent = t("set.key_empty"); return; }
-    Api.setKey(v); keyInput.value = ""; refreshKey();
+    Api.setKey(v); keyInput.value = "";
+    refreshKey(); refreshFarm();
   });
   panel.querySelector("#api-clear").addEventListener("click", () => {
-    Api.clearKey(); refreshKey();
+    Api.clearKey(); refreshKey(); refreshFarm();
   });
 
   panel.querySelector("#farm-save").addEventListener("click", () => {
@@ -879,7 +1180,7 @@ function renderSettingsTab() {
     resultBox.innerHTML = `<p class="note">${t("set.testing")}</p>`;
     debugBox.textContent = t("set.requesting");
     try {
-      const data = await Api.fetchFarm(Api.getFarmId());
+      const data = await Api.fetchFarm(Api.effectiveFarmId());
       resultBox.innerHTML = `<p class="note" style="border-left-color: var(--accent-2);">${t("set.test_ok")}</p>`;
       debugBox.textContent = JSON.stringify(data, null, 2);
     } catch (e) {

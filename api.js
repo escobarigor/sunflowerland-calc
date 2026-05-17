@@ -7,8 +7,9 @@
 // diretas de navegadores, então passamos por aqui.
 const API_BASE = "https://sflcalc-proxy.igorborbaescobar.workers.dev";
 
-const STORAGE_KEY = "sfl_eco_api_key";
-const FARM_ID_KEY = "sfl_eco_farm_id";
+const STORAGE_KEY  = "sfl_eco_api_key";
+const FARM_ID_KEY  = "sfl_eco_farm_id";
+const HISTORY_KEY  = "sfl_eco_history";
 
 const Api = {
 
@@ -17,10 +18,11 @@ const Api = {
 
   getCachedFarm() { return this._farmCache; },
 
-  /* Carrega a fazenda e guarda em cache */
+  /* Carrega a fazenda, guarda em cache e registra um snapshot no histórico */
   async loadFarm() {
-    const data = await this.fetchFarm(this.getFarmId());
+    const data = await this.fetchFarm(this.effectiveFarmId());
     this._farmCache = { data, fetchedAt: Date.now() };
+    this._saveSnapshot(data);
     return data;
   },
 
@@ -37,11 +39,58 @@ const Api = {
     return k.slice(0, 6) + "…" + k.slice(-4);
   },
 
-  /* ---------- ID da fazenda ---------- */
+  /* ---------- ID da fazenda ----------
+     A chave tem o formato sfl.<base64-id>.<assinatura> — então o
+     farm ID pode ser extraído da própria chave, sem o usuário digitar. */
   getFarmId()   { return localStorage.getItem(FARM_ID_KEY) || ""; },
   setFarmId(id) { localStorage.setItem(FARM_ID_KEY, (id || "").trim()); },
   clearFarmId() { localStorage.removeItem(FARM_ID_KEY); },
   hasFarmId()   { return this.getFarmId().length > 0; },
+
+  /* Extrai o farm ID da chave (trecho do meio, em base64). "" se não der. */
+  farmIdFromKey() {
+    const parts = this.getKey().split(".");
+    if (parts.length < 2) return "";
+    try {
+      const decoded = atob(parts[1]);
+      return /^\d+$/.test(decoded) ? decoded : "";
+    } catch (e) {
+      return "";
+    }
+  },
+
+  /* ID a usar: o manual (se houver) tem prioridade; senão, o da chave. */
+  effectiveFarmId() {
+    return this.getFarmId() || this.farmIdFromKey();
+  },
+
+  /* ---------- Histórico (snapshots no localStorage) ---------- */
+  getHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); }
+    catch (e) { return []; }
+  },
+  clearHistory() { localStorage.removeItem(HISTORY_KEY); },
+
+  _saveSnapshot(data) {
+    try {
+      const f = data.farm || {};
+      const snap = {
+        t: Date.now(),
+        coins:  f.coins || 0,
+        flower: parseFloat(f.balance || "0") || 0,
+        xp:     (f.bumpkin && f.bumpkin.experience) || 0
+      };
+      const hist = this.getHistory();
+      // se a última foi há menos de 1h, substitui em vez de duplicar
+      if (hist.length && (snap.t - hist[hist.length - 1].t) < 3600000) {
+        hist[hist.length - 1] = snap;
+      } else {
+        hist.push(snap);
+      }
+      while (hist.length > 60) hist.shift();
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+    } catch (e) { /* histórico é best-effort, ignora falhas */ }
+  },
 
   /* ---------- Chamada à API ----------
      Busca dados de uma fazenda. Lança Error com mensagem amigável

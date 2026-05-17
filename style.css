@@ -309,6 +309,8 @@ select:focus, input:focus { outline: 2px solid var(--accent); }
 }
 .note.warn { border-left-color: var(--danger); }
 .warn-text { color: var(--danger); font-weight: 600; }
+.delta-up { color: var(--accent-2); font-weight: 600; font-size: 0.85em; }
+.delta-down { color: var(--danger); font-weight: 600; font-size: 0.85em; }
 
 .app-footer {
   text-align: center;
